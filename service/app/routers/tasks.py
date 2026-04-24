@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import random
 import uuid
 from typing import Annotated
 
@@ -17,7 +19,23 @@ from app.models import (
 )
 from app.state import get_comment_store, get_task_store
 
-router = APIRouter(prefix="/tasks", tags=["tasks"])
+RATE_LIMIT_PROBABILITY = 0.30
+
+
+def maybe_rate_limit() -> None:
+    """Randomly return 429 to simulate a retry-worthy shared API."""
+    probability = float(os.getenv("TASK_API_RATE_LIMIT_PROBABILITY", str(RATE_LIMIT_PROBABILITY)))
+    if probability <= 0:
+        return
+    if random.random() < probability:
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Retry the request.",
+            headers={"Retry-After": "1"},
+        )
+
+
+router = APIRouter(prefix="/tasks", tags=["tasks"], dependencies=[Depends(maybe_rate_limit)])
 
 
 @router.get("", response_model=list[Task])

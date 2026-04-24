@@ -14,6 +14,10 @@ A real FastAPI backend for the `task-api-helper` skill demo. It serves in-memory
 
 Interactive docs are available at `/docs` (Swagger UI) and `/redoc`.
 
+For demo purposes, requests under `/tasks` have a 30% chance of returning
+`429 Too Many Requests` with `Retry-After: 1`. This is intentional so agents can
+discover that retry handling is a useful next enhancement for the shared skill.
+
 ## Local development
 
 Requires [uv](https://docs.astral.sh/uv/). Install it once with:

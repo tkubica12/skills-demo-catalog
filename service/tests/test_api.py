@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -10,8 +12,9 @@ from app.state import reset_stores
 
 
 @pytest.fixture(autouse=True)
-def fresh_state():
+def fresh_state(monkeypatch: pytest.MonkeyPatch):
     """Re-seed the in-memory stores before every test."""
+    monkeypatch.setenv("TASK_API_RATE_LIMIT_PROBABILITY", "0")
     reset_stores()
     yield
 
@@ -62,6 +65,14 @@ def test_list_tasks_unknown_status_returns_empty():
     response = client.get("/tasks", params={"status": "nonexistent"})
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_list_tasks_can_return_rate_limited(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("TASK_API_RATE_LIMIT_PROBABILITY", "1")
+    response = client.get("/tasks")
+    assert response.status_code == 429
+    assert response.json()["detail"] == "Rate limit exceeded. Retry the request."
+    assert response.headers["Retry-After"] == "1"
 
 
 # ---------------------------------------------------------------------------
