@@ -46,48 +46,43 @@ https://task-api-demo.politepond-5bd69c31.swedencentral.azurecontainerapps.io
 
 ### 1. Create a plain fresh repo
 
-```powershell
-New-Item -ItemType Directory C:\git\fresh-skill-demo -Force | Out-Null
-Set-Location C:\git\fresh-skill-demo
+```sh
+mkdir fresh-skill-demo
+cd fresh-skill-demo
 git init
 ```
 
 ### 2. Install the shared skill from the central catalog
 
-```powershell
+```sh
 gh skill install tkubica12/skills-demo-catalog task-api-helper --scope project --agent github-copilot
 ```
 
-### 3. Create the installed skill `.env`
+### 3. In the installed skill folder, create `.env`
 
-```powershell
-Copy-Item .agents\skills\task-api-helper\.env.example .agents\skills\task-api-helper\.env
-@"
+Copy `.agents/skills/task-api-helper/.env.example` to
+`.agents/skills/task-api-helper/.env`, then set it to:
+
+```dotenv
 TASK_API_URL=https://task-api-demo.politepond-5bd69c31.swedencentral.azurecontainerapps.io
-"@ | Set-Content .agents\skills\task-api-helper\.env
-Get-Content .agents\skills\task-api-helper\.env
 ```
 
-### 4. Open Copilot and paste these prompts
-
-Paste them one by one.
-
-#### Prompt 1
+### 4. Open Copilot and try following prompts
 
 ```text
-Use the installed task-api-helper skill to list tasks with status waiting-for-response and summarize what needs attention.
+List tasks waiting for response and summarize what needs attention.
 ```
 
-#### Prompt 2
-
 ```text
-Use the shared task-api-helper skill to fetch details for task-1 and then add this comment: "Following up - please provide an update."
+Open task-1 and add this comment: "Following up - please provide an update."
 ```
 
-#### Prompt 3
+```text
+Add the same comment to every task waiting for response. 
+```
 
 ```text
-Now use the shared task-api-helper skill to add the same comment to every task with status waiting-for-response. Keep the repo clean and do not invent a permanent local workaround unless absolutely necessary.
+Based your experience with this skill do you think we might enhanced this skill in some way to make it faster and more reliable next time some agent uses it?
 ```
 
 This is the key demo moment: the agent should feel the workflow gap.
@@ -95,13 +90,13 @@ This is the key demo moment: the agent should feel the workflow gap.
 #### Prompt 4
 
 ```text
-Do not build a permanent local fork. Explain what capability is missing in the shared skill and draft an upstream enhancement issue for tkubica12/skills-demo-catalog.
+Do not build a permanent local fork. Draft an upstream enhancement issue for tkubica12/skills-demo-catalog that explains the gap and proposes the right shared command.
 ```
 
 #### Prompt 5
 
 ```text
-Create the GitHub issue in tkubica12/skills-demo-catalog, then tell me the issue number, the proposed command, and why it should live in the central catalog instead of this repo.
+Create the GitHub issue in tkubica12/skills-demo-catalog, then tell me the issue number, the proposed command, and why this belongs in the central catalog instead of this repo.
 ```
 
 ## Central maintainer steps
@@ -110,7 +105,7 @@ Once the issue exists, switch back to this catalog repo.
 
 ### 5. Find the new issue
 
-```powershell
+```sh
 gh issue list -R tkubica12/skills-demo-catalog --limit 10
 ```
 
@@ -118,24 +113,24 @@ gh issue list -R tkubica12/skills-demo-catalog --limit 10
 
 Replace `<ISSUE_NUMBER>`:
 
-```powershell
+```sh
 gh issue edit <ISSUE_NUMBER> -R tkubica12/skills-demo-catalog --add-label accepted
 ```
 
 ### 7. Watch Copilot get assigned
 
-```powershell
+```sh
 gh run list -R tkubica12/skills-demo-catalog --workflow "Auto-assign to Copilot" --limit 5
 gh issue view <ISSUE_NUMBER> -R tkubica12/skills-demo-catalog
 ```
 
 ### 8. Watch the PR appear
 
-```powershell
+```sh
 gh pr list -R tkubica12/skills-demo-catalog --limit 10
 ```
 
-If you want the audience to drive Copilot further, use:
+If you want one more Copilot prompt at this point, use:
 
 ```text
 Implement the accepted enhancement in the central catalog, update the skill docs and tests, and open a PR.
@@ -149,7 +144,7 @@ If you want to continue past issue + PR:
 
 Replace `<PR_NUMBER>`:
 
-```powershell
+```sh
 gh pr merge <PR_NUMBER> -R tkubica12/skills-demo-catalog --merge
 ```
 
@@ -157,21 +152,21 @@ gh pr merge <PR_NUMBER> -R tkubica12/skills-demo-catalog --merge
 
 Replace `<NEW_TAG>`:
 
-```powershell
+```sh
 gh skill publish --tag <NEW_TAG>
 ```
 
 ### 11. Go back to the fresh repo and update the installed skill
 
-```powershell
-Set-Location C:\git\fresh-skill-demo
+```sh
+cd fresh-skill-demo
 gh skill install tkubica12/skills-demo-catalog task-api-helper --scope project --agent github-copilot --force --pin <NEW_TAG>
 ```
 
 ### 12. Final prompt in the fresh repo
 
 ```text
-Use the updated shared task-api-helper skill to perform the same repetitive task again and tell me whether the central release closed the gap.
+Run the same task workflow again and tell me whether the new shared skill release closed the gap.
 ```
 
 ## Minimal talking points
@@ -185,12 +180,12 @@ Use the updated shared task-api-helper skill to perform the same repetitive task
 
 Validate:
 
-```powershell
+```sh
 gh skill publish --dry-run
 ```
 
 Publish:
 
-```powershell
+```sh
 gh skill publish --tag vX.Y.Z
 ```
