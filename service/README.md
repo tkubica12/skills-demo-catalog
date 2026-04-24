@@ -16,27 +16,43 @@ Interactive docs are available at `/docs` (Swagger UI) and `/redoc`.
 
 ## Local development
 
-```bash
-# From the service/ directory
-pip install -r requirements-dev.txt
-uvicorn app.main:app --reload --port 8080
+Requires [uv](https://docs.astral.sh/uv/). Install it once with:
+
+```sh
+# Linux / macOS / WSL
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Then from the `service/` directory:
+
+```sh
+uv sync                                              # install all deps into .venv
+uv run uvicorn app.main:app --reload --port 8080    # start dev server with auto-reload
 ```
 
 Then point the CLI at it:
 
-```bash
+```sh
+# Linux / macOS
 export TASK_API_URL=http://localhost:8080
 python ../skills/task-api-helper/scripts/task_cli.py list-tasks
 python ../skills/task-api-helper/scripts/task_cli.py list-tasks --status waiting-for-response
 python ../skills/task-api-helper/scripts/task_cli.py get-task task-1
 python ../skills/task-api-helper/scripts/task_cli.py add-comment task-1 "Following up"
+
+# Windows (PowerShell)
+$env:TASK_API_URL = "http://localhost:8080"
+python ..\skills\task-api-helper\scripts\task_cli.py list-tasks
 ```
 
 ## Run tests
 
-```bash
+```sh
 cd service/
-pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 ## Docker

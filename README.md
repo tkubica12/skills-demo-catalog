@@ -24,7 +24,7 @@ After installation, invoke it from Copilot Chat in the appropriate client for yo
 
 The baseline CLI lives at `skills/task-api-helper/scripts/task_cli.py`.
 
-```bash
+```sh
 python skills/task-api-helper/scripts/task_cli.py list-tasks [--status <status>] [--api-url <url>]
 python skills/task-api-helper/scripts/task_cli.py get-task TASK_ID [--api-url <url>]
 python skills/task-api-helper/scripts/task_cli.py add-comment TASK_ID "Your comment text" [--api-url <url>]
@@ -32,19 +32,34 @@ python skills/task-api-helper/scripts/task_cli.py add-comment TASK_ID "Your comm
 
 Environment variables:
 
-```bash
+```sh
+# Linux / macOS
 export TASK_API_URL="https://tasks.internal.example.com"
 export TASK_API_TOKEN="<optional-bearer-token>"
+
+# Windows (PowerShell)
+$env:TASK_API_URL = "https://tasks.internal.example.com"
+$env:TASK_API_TOKEN = "<optional-bearer-token>"
 ```
 
 ## Known limitation — no bulk-add-comment
 
 The baseline CLI does **not** expose `bulk-add-comment`. Teams that need to comment on many tasks currently use a loop such as:
 
-```bash
+```sh
+# Linux / macOS
 for id in $(python skills/task-api-helper/scripts/task_cli.py list-tasks --status waiting-for-response | python -c "import sys,json; [print(t['id']) for t in json.load(sys.stdin)]"); do
   python skills/task-api-helper/scripts/task_cli.py add-comment "$id" "Reminder: please respond so we can close this task"
 done
+```
+
+```powershell
+# Windows (PowerShell)
+$ids = python skills/task-api-helper/scripts/task_cli.py list-tasks --status waiting-for-response |
+       python -c "import sys,json; [print(t['id']) for t in json.load(sys.stdin)]"
+foreach ($id in $ids) {
+  python skills/task-api-helper/scripts/task_cli.py add-comment $id "Reminder: please respond so we can close this task"
+}
 ```
 
 That workaround is acceptable for small batches but is slow and brittle in CI because it performs one HTTP round-trip per task.
@@ -89,16 +104,20 @@ The GitHub Actions workflow `.github/workflows/ci-benchmark.yml` runs this autom
 
 A real FastAPI backend lives in [`service/`](service/). It provides the same REST contract consumed by `task_cli.py` and is the canonical backing service for the demo scenario.
 
-Quick start:
+Quick start (requires [uv](https://docs.astral.sh/uv/)):
 
-```bash
+```sh
 # Run locally
 cd service/
-pip install -r requirements-dev.txt
-uvicorn app.main:app --reload --port 8080
-export TASK_API_URL=http://localhost:8080
+uv sync
+uv run uvicorn app.main:app --reload --port 8080
 
-# Or via Docker
+# Set the API URL (Linux/macOS)
+export TASK_API_URL=http://localhost:8080
+# Set the API URL (Windows PowerShell)
+$env:TASK_API_URL = "http://localhost:8080"
+
+# Or via Docker (no local Python needed)
 docker build -t task-api-service:latest service/
 docker run --rm -p 8080:8080 task-api-service:latest
 ```
@@ -171,8 +190,13 @@ https://<app-name>.<unique-id>.<region>.azurecontainerapps.io
 
 Point the CLI and skill at it:
 
-```bash
+```sh
+# Linux / macOS
 export TASK_API_URL=https://<your-fqdn>
+python skills/task-api-helper/scripts/task_cli.py list-tasks
+
+# Windows (PowerShell)
+$env:TASK_API_URL = "https://<your-fqdn>"
 python skills/task-api-helper/scripts/task_cli.py list-tasks
 ```
 
@@ -186,14 +210,40 @@ Packages in a public repository are publicly readable by default — no pull sec
 
 Validate the catalog structure without publishing:
 
-```bash
+```sh
 gh skill publish --dry-run
 ```
 
 Publish a release tag:
 
-```bash
+```sh
 gh skill publish --tag vX.Y.Z
+```
+
+## Developer setup
+
+This repo uses [uv](https://docs.astral.sh/uv/) for Python tooling. Install uv once:
+
+```sh
+# Linux / macOS / WSL
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Then bootstrap both projects:
+
+```sh
+# Root (CLI tests + benchmark)
+uv sync
+uv run pytest tests/ -v
+
+# Service
+cd service
+uv sync
+uv run pytest tests/ -v
+uv run uvicorn app.main:app --reload --port 8080
 ```
 
 ## What is fully automated today vs scaffolded?

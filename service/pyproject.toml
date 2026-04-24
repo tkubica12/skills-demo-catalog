@@ -1,2 +1,19 @@
+[project]
+name = "task-api-service"
+version = "0.1.0"
+description = "FastAPI Task API service for the task-api-helper skill demo"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.111.0,<1.0",
+    "uvicorn[standard]>=0.30.0,<1.0",
+    "pydantic>=2.7.0,<3.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.27.0,<1.0",
+    "pytest>=8.0,<10.0",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
