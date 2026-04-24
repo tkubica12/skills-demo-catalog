@@ -98,8 +98,7 @@ jobs:
               --target-port 8080 \
               --ingress external \
               --min-replicas 0 \
-              --max-replicas 3 \
-              --location "${LOC}"
+              --max-replicas 3
           fi
 
       - name: Print public endpoint
