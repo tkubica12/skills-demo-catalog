@@ -1,0 +1,69 @@
+name: Skill Enhancement Request
+description: Request a new feature or change to an existing skill in this catalog
+title: "[Enhancement] <skill-name>: <short description>"
+labels:
+  - skill-enhancement
+  - needs-triage
+body:
+  - type: dropdown
+    id: skill-name
+    attributes:
+      label: Skill name
+      description: Which skill does this request apply to?
+      options:
+        - release-readiness-check
+      default: 0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: request-type
+    attributes:
+      label: Request type
+      options:
+        - New check / category
+        - Change to existing check
+        - Bug fix (incorrect behaviour)
+        - Documentation improvement
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What is missing or wrong today? What pain does this cause?
+      placeholder: "When I run the release-readiness-check skill, it does not verify X, which means we miss Y during release reviews."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution
+      description: Describe the behaviour you would like to see.
+      placeholder: "Add a check under category Z that runs `command --flag` and FAILs if the exit code is non-zero."
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: How will you know this enhancement is complete?
+      placeholder: |
+        - [ ] The skill output includes a row for the new check
+        - [ ] FAIL is reported when condition X is true
+        - [ ] PASS is reported when condition Y is true
+    validations:
+      required: false
+
+  - type: input
+    id: contact
+    attributes:
+      label: Team / project
+      description: Which team or project is requesting this? Helps us prioritise.
+      placeholder: "Platform Engineering / acme-payments"
+    validations:
+      required: false
