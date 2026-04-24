@@ -1,6 +1,6 @@
 ---
 name: task-api-helper
-description: 'Helper skill for teams using the shared Task API REST service and its task_cli.py wrapper. Use when the user needs to interact with project tasks: list tasks (optionally filtering by status such as waiting-for-response), get a task, add comments, or investigate missing bulk operations. The skill knows the API contract, CLI command set, and the improvement process for proposing new CLI commands upstream. Supports: list-tasks, get-task, add-comment. Does NOT support bulk-add-comment in the baseline — consumers who need that capability should follow the improvement process.'
+description: 'Helper skill for teams using the shared Task API REST service and its task_cli.py wrapper. Use when the user needs to interact with project tasks: list tasks (optionally filtering by status such as waiting-for-response), get a task, add comments to one or many tasks. The skill knows the API contract and full CLI command set. Supports: list-tasks, get-task, add-comment, bulk-add-comment.'
 license: MIT
 allowed-tools: Bash,Python
 ---
@@ -56,19 +56,21 @@ python task_cli.py add-comment TASK_ID "Your comment text" [--api-url <url>]
 
 Appends a comment to a single task. The comment text is a positional argument.
 
+### bulk-add-comment
+
+```bash
+python task_cli.py bulk-add-comment (--ids <id>... | --status <status>) --comment <text> [--api-url <url>]
+```
+
+Appends the same comment to multiple tasks in a single request. Provide either `--ids` with one or more task identifiers, or `--status` to target all tasks with that status. Returns the bulk endpoint response including the updated task IDs.
+
 ---
 
 ## Known Limitation: No bulk-add-comment
 
-The baseline CLI does **not** support `bulk-add-comment`. Teams that need to annotate many tasks at once currently work around this with a shell loop:
+~~The baseline CLI does **not** support `bulk-add-comment`.~~
 
-```bash
-for id in $(python task_cli.py list-tasks --status waiting-for-response | python -c "import sys,json; [print(t['id']) for t in json.load(sys.stdin)]"); do
-  python task_cli.py add-comment "$id" "Reminder: please respond so we can close this task"
-done
-```
-
-This is slow (one HTTP round-trip per task) and brittle in CI. If your team has measured this pain, open an enhancement issue in the catalog repository using the **Task API Enhancement** template. See `references/IMPROVEMENT-PROCESS.md` for the full flow.
+`bulk-add-comment` is now available. See the **Supported CLI Commands** section above.
 
 ---
 
