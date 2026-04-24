@@ -87,7 +87,9 @@ jobs:
             az containerapp update \
               --name "${APP}" \
               --resource-group "${RG}" \
-              --image "${IMAGE}"
+              --image "${IMAGE}" \
+              --min-replicas 1 \
+              --max-replicas 3
           else
             echo "Container App not found — creating."
             az containerapp create \
@@ -97,7 +99,7 @@ jobs:
               --image "${IMAGE}" \
               --target-port 8080 \
               --ingress external \
-              --min-replicas 0 \
+              --min-replicas 1 \
               --max-replicas 3
           fi
 
