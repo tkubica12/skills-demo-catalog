@@ -75,9 +75,18 @@ Appends a comment to a single task. The comment text is a positional argument.
 
 This skill is intentionally centrally maintained. If you discover that a common
 workflow feels repetitive, awkward, or missing a useful higher-level command,
-open an enhancement issue in the catalog repository using the **Task API
-Enhancement** template. See `references/IMPROVEMENT-PROCESS.md` for the full
-flow.
+do **not** jump straight to an upstream issue.
+
+First:
+
+1. try a temporary local proof of concept in the current repo
+2. verify whether it actually helps
+3. capture the exact command or behavior you tested
+4. remove the local patch
+
+Only then open an enhancement issue in the catalog repository using the
+**Task API Enhancement** template. See
+`references/IMPROVEMENT-PROCESS.md` for the full flow.
 
 ---
 
@@ -95,4 +104,7 @@ python task_cli.py list-tasks --status waiting-for-response
 
 ## Improvement Requests
 
-This skill is centrally maintained. To request a new command or API feature, open an issue in this catalog repository using the **Task API Enhancement** template. Reference the issue number in any PR that implements the change. See `references/IMPROVEMENT-PROCESS.md` for the full lifecycle.
+This skill is centrally maintained. Proposed enhancements should be backed by a
+short local proof of concept in the consumer repo before an upstream issue is
+opened. Reference the issue number in any PR that implements the change. See
+`references/IMPROVEMENT-PROCESS.md` for the full lifecycle.

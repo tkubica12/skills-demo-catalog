@@ -82,7 +82,7 @@ Add the same comment to every task waiting for response.
 ```
 
 ```text
-Based your experience with this skill do you think we might enhanced this skill in some way to make it faster and more reliable next time some agent uses it?
+Based on your experience with this workflow, suggest one improvement that could make it faster or more reliable next time.
 ```
 
 This is the key demo moment: the agent should feel the workflow gap.
@@ -90,13 +90,19 @@ This is the key demo moment: the agent should feel the workflow gap.
 #### Prompt 4
 
 ```text
-Do not build a permanent local fork. Draft an upstream enhancement issue for tkubica12/skills-demo-catalog that explains the gap and proposes the right shared command.
+Try a temporary local proof of concept in this repo only. Do not commit it. Tell me what you changed, whether it helped, and what the right shared improvement would be.
 ```
 
 #### Prompt 5
 
 ```text
-Create the GitHub issue in tkubica12/skills-demo-catalog, then tell me the issue number, the proposed command, and why this belongs in the central catalog instead of this repo.
+Remove the local proof of concept, then draft an upstream enhancement issue for tkubica12/skills-demo-catalog with the exact findings and proposed shared command.
+```
+
+#### Prompt 6
+
+```text
+Create the GitHub issue in tkubica12/skills-demo-catalog, then tell me the issue number, the local evidence you included, and why this belongs in the central catalog instead of this repo.
 ```
 
 ## Central maintainer steps

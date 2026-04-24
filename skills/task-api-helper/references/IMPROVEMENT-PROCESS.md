@@ -9,11 +9,11 @@ The `task-api-helper` skill is centrally maintained so every consumer gets the s
 ## Full lifecycle
 
 1. **Local experiment**  
-   A consumer team forks `task_cli.py` locally, adds the proposed behavior in that private working copy, and validates it against their real workflow.
+   A consumer team tries a temporary local proof of concept in the current repository and validates it against the real workflow that exposed the gap.
 2. **Benchmark**  
-   The team captures before/after timing data, usually by comparing the current workflow against the experimental command. `tests/benchmark_bulk.py` is the reference benchmark harness.
+   The team captures before/after evidence from that local trial — timing data when relevant, but also reliability improvements, fewer retries, fewer manual steps, or cleaner behavior.
 3. **Issue with template**  
-   The team restores the local fork to the published baseline, then opens an issue with `.github/ISSUE_TEMPLATE/task-api-enhancement.yml` and includes the benchmark data.
+   The team restores the local changes to the published baseline, then opens an issue with `.github/ISSUE_TEMPLATE/task-api-enhancement.yml` and includes the local proof-of-concept evidence.
 4. **Triage**  
    Catalog maintainers review the problem statement, the measured pain, the proposed command syntax, and whether the shared API or CLI contract should change.
 5. **Copilot or cloud agent implementation**  
@@ -25,22 +25,39 @@ The `task-api-helper` skill is centrally maintained so every consumer gets the s
 8. **Consumer update**  
    Consumer repositories update their installed skill version and stop carrying any local fork.
 
+## Downstream consumer rule
+
+The downstream agent should behave like an engineer, not an issue bot:
+
+1. reproduce the pain locally
+2. try a disposable local proof of concept
+3. verify whether the idea actually helps
+4. write down exact findings
+5. remove the local changes
+6. only then open the upstream issue
+
+An upstream issue without any local validation is lower quality and should be
+avoided when the consumer repo can safely test the idea first.
+
 ## What "local experiment" means
 
 A valid local experiment must:
 
-1. fork the CLI script only in a local branch or disposable copy
-2. implement the proposed command end to end
-3. run the benchmark or equivalent timing measurement before and after
-4. record the exact command syntax, request shape, and observed speedup
-5. restore the local fork so production stays on the published baseline
-6. open the enhancement issue with the data, not with the forked code
+1. be disposable and local to the current repo
+2. test the proposed behavior end to end
+3. capture concrete evidence, not just an opinion
+4. record the exact command syntax or retry strategy that was tried
+5. record the observed result: faster, fewer failures, less repetition, cleaner UX, etc.
+6. restore the local repo so production stays on the published baseline
+7. open the enhancement issue with the findings, not with the forked code
 
-For a repetitive multi-step task workflow, the experiment should verify the proposed command against the mock server and, if available, the staging API, and include the full before/after timing from `tests/benchmark_bulk.py`.
+For a repetitive multi-step task workflow, the experiment should verify the
+proposed behavior against the real endpoint available to the consumer repo and
+capture the practical impact in terms that a maintainer can evaluate.
 
 The local experiment is evidence, not an unofficial rollout path.
 
-## Benchmark CI workflow
+## Catalog-side benchmark CI workflow
 
 `.github/workflows/ci-benchmark.yml` runs the benchmark harness on every push, pull request, and manual dispatch. The workflow:
 
@@ -49,7 +66,8 @@ The local experiment is evidence, not an unofficial rollout path.
 3. runs `pytest tests/benchmark_bulk.py -v --tb=short`
 4. prints the baseline loop time, simulated bulk time, and computed speedup
 
-This makes it easy to compare a proposed command against the current baseline and reject regressions before release.
+This is catalog-internal validation. Downstream repos are not expected to
+contain these exact benchmark files.
 
 ## Token measurement note
 

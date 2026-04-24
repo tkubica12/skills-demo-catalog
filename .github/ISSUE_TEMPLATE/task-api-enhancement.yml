@@ -8,8 +8,8 @@ body:
   - type: dropdown
     id: affected-command
     attributes:
-      label: Affected CLI command
-      description: Which command or area is affected?
+      label: Affected area
+      description: Which shared workflow, command, or behavior is affected?
       options:
         - list-tasks
         - get-task
@@ -34,46 +34,61 @@ body:
   - type: textarea
     id: local-experiment-summary
     attributes:
-      label: Local experiment summary
+      label: Local proof-of-concept summary
       description: |
-        What did you implement locally to prove the idea works?
-        Include the exact command you tested, the API request shape, and the observed behavior.
-        Do NOT include the forked code — only the evidence.
+        What did you try locally before opening this issue?
+        Include the exact command or retry behavior you tested, what changed, and what you observed.
+        Do NOT paste forked code here — only the evidence and proposal.
       placeholder: |
-        I forked task_cli.py locally and added a bulk-add-comment command that sends
-        a single POST /tasks/bulk-comment with {"task_ids": [...], "text": "..."}.
-        Tested against the mock server and our staging API — all tasks updated in one call.
-        Command tested: python task_cli.py bulk-add-comment --status waiting-for-response --comment "Reminder: please respond"
+        I tried a temporary local proof of concept in my repo before opening this issue.
+        I changed the local behavior so repeated 429s were retried with a short delay.
+        Tested command / workflow: add the same comment across waiting tasks.
+        Observed result: fewer failures and less manual repetition.
     validations:
       required: true
-
+ 
   - type: textarea
-    id: benchmark-results
+    id: local-evidence
     attributes:
-      label: Before/After benchmark results
-      description: Include timing data from the local experiment, ideally from tests/benchmark_bulk.py.
+      label: Local evidence
+      description: |
+        Include whatever evidence you have from the local proof of concept:
+        timing, retry counts, reduced failures, fewer manual steps, or clearer behavior.
       placeholder: |
-        Baseline loop (add-comment per task): 1.20s for 10 tasks
-        Simulated bulk call: 0.10s for 10 tasks
-        Speedup: 12.00x
+        Before: repeated task updates often failed on 429 and required rerunning manually.
+        After local trial: the workflow completed reliably after automatic retries.
+        Evidence: 3 transient 429s handled successfully during the local PoC.
     validations:
       required: true
 
   - type: input
-    id: proposed-command
+    id: proposed-change
     attributes:
-      label: Proposed new CLI command — exact syntax
-      description: Provide the exact command syntax you want standardized in the catalog.
-      placeholder: "python task_cli.py bulk-add-comment --status waiting-for-response --comment \"Reminder: please respond\""
+      label: Proposed shared change — exact syntax or behavior
+      description: Provide the exact command syntax, retry behavior, or workflow change you want standardized in the catalog.
+      placeholder: "python task_cli.py bulk-add-comment --status waiting-for-response --comment \"Reminder: please respond\"" 
     validations:
       required: true
 
+  - type: textarea
+    id: why-local-first
+    attributes:
+      label: Why this should be changed centrally
+      description: Explain why this belongs in the shared skill instead of remaining a repo-local workaround.
+      placeholder: |
+        This behavior will help every downstream repo using the shared skill.
+        Keeping it local would duplicate logic and drift from the central workflow.
+    validations:
+      required: true
+ 
   - type: checkboxes
     id: restore-confirmation
     attributes:
       label: Baseline restoration confirmation
       options:
-        - label: I confirm the local changes were NOT committed to production and my local fork has been restored to the published baseline.
+        - label: I confirm I tried a local proof of concept before opening this issue.
+          required: true
+        - label: I confirm the local changes were NOT committed to production and my local repo has been restored to the published baseline.
           required: true
 
   - type: input
