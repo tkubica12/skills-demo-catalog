@@ -85,6 +85,26 @@ Baseline (loop): 1.20s | Simulated bulk: 0.10s | Speedup: 12.00x
 
 The GitHub Actions workflow `.github/workflows/ci-benchmark.yml` runs this automatically. Token measurement for Copilot CLI versus SDK usage is configurable with `BENCHMARK_TOKEN_MODE=cli|sdk`; the default is `none`, which honestly skips token counting when CI does not have the necessary credentials.
 
+## Task API service
+
+A real FastAPI backend lives in [`service/`](service/). It provides the same REST contract consumed by `task_cli.py` and is the canonical backing service for the demo scenario.
+
+Quick start:
+
+```bash
+# Run locally
+cd service/
+pip install -r requirements-dev.txt
+uvicorn app.main:app --reload --port 8080
+export TASK_API_URL=http://localhost:8080
+
+# Or via Docker
+docker build -t task-api-service:latest service/
+docker run --rm -p 8080:8080 task-api-service:latest
+```
+
+See [`service/README.md`](service/README.md) for full endpoint reference and Docker details.
+
 ## Publishing
 
 Validate the catalog structure without publishing:

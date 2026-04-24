@@ -20,10 +20,16 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install pytest requests
+        run: |
+          pip install pytest requests
+          pip install -r service/requirements-dev.txt
 
       - name: Verify CLI help
         run: python skills/task-api-helper/scripts/task_cli.py --help
 
-      - name: Run tests
+      - name: Run CLI tests
+        run: pytest tests/ -v
+
+      - name: Run service tests
+        working-directory: service
         run: pytest tests/ -v
