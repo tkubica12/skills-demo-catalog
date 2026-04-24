@@ -1,0 +1,116 @@
+name: Service — Deploy to Azure Container Apps
+
+# Deploys (or updates) the Task API container on Azure Container Apps.
+#
+# Triggers automatically when the "Service — Build & Publish" workflow
+# completes successfully on the main branch.  Can also be run manually
+# (workflow_dispatch) to re-deploy or roll back to a specific image tag.
+#
+# Required secrets (set in repo Settings → Secrets and variables → Actions):
+#   AZURE_CREDENTIALS  – Service-principal JSON produced by:
+#                        az ad sp create-for-rbac --name "skills-demo-deploy" \
+#                          --role contributor \
+#                          --scopes /subscriptions/<sub>/resourceGroups/<rg> \
+#                          --sdk-auth
+#
+# Required repository variables (Settings → Secrets and variables → Variables):
+#   AZURE_RESOURCE_GROUP      – e.g. rg-skills-demo
+#   AZURE_CONTAINER_APP_NAME  – e.g. task-api
+#   AZURE_CONTAINER_APP_ENV   – ACA managed environment name (needed for first-time create)
+#   AZURE_LOCATION            – Azure region, e.g. eastus (needed for first-time create)
+#
+# Image registry: GHCR packages in a public repository are publicly readable;
+# no pull secret is required.  If the repository is private, add a
+# GHCR_TOKEN secret (PAT with read:packages) and uncomment the registry-credentials
+# block in the create/update commands below.
+
+on:
+  workflow_run:
+    workflows: ["Service — Build & Publish"]
+    types: [completed]
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy (default: sha-<head sha>)"
+        required: false
+        default: ""
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/task-api
+
+jobs:
+  deploy:
+    name: Deploy to Azure Container Apps
+    runs-on: ubuntu-latest
+    # For workflow_run: only proceed when publish succeeded
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+
+    steps:
+      - name: Resolve image tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            TAG="${{ github.event.inputs.image_tag }}"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            SHA="${{ github.event.workflow_run.head_sha }}"
+            TAG="sha-${SHA::7}"
+          else
+            SHA="${{ github.sha }}"
+            TAG="sha-${SHA::7}"
+          fi
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${TAG}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "Deploying image: ${IMAGE}"
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy or update Azure Container App
+        run: |
+          IMAGE="${{ steps.tag.outputs.image }}"
+          RG="${{ vars.AZURE_RESOURCE_GROUP }}"
+          APP="${{ vars.AZURE_CONTAINER_APP_NAME }}"
+          ENV="${{ vars.AZURE_CONTAINER_APP_ENV }}"
+          LOC="${{ vars.AZURE_LOCATION }}"
+
+          echo "Target image: ${IMAGE}"
+
+          if az containerapp show --name "${APP}" --resource-group "${RG}" &>/dev/null; then
+            echo "Container App exists — updating image."
+            az containerapp update \
+              --name "${APP}" \
+              --resource-group "${RG}" \
+              --image "${IMAGE}"
+          else
+            echo "Container App not found — creating."
+            az containerapp create \
+              --name "${APP}" \
+              --resource-group "${RG}" \
+              --environment "${ENV}" \
+              --image "${IMAGE}" \
+              --target-port 8080 \
+              --ingress external \
+              --min-replicas 0 \
+              --max-replicas 3 \
+              --location "${LOC}"
+          fi
+
+      - name: Print public endpoint
+        run: |
+          RG="${{ vars.AZURE_RESOURCE_GROUP }}"
+          APP="${{ vars.AZURE_CONTAINER_APP_NAME }}"
+          FQDN=$(az containerapp show \
+            --name "${APP}" \
+            --resource-group "${RG}" \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)
+          echo "Public endpoint: https://${FQDN}"
+          echo "Health check:    https://${FQDN}/health"
+          echo "Swagger UI:      https://${FQDN}/docs"

@@ -105,6 +105,83 @@ docker run --rm -p 8080:8080 task-api-service:latest
 
 See [`service/README.md`](service/README.md) for full endpoint reference and Docker details.
 
+## Container packaging, CI/CD & deployment
+
+### Workflows
+
+| Workflow file | Trigger | Purpose |
+|---|---|---|
+| `.github/workflows/service-ci.yml` | Push/PR touching `service/**` | Run pytest + Dockerfile lint |
+| `.github/workflows/service-publish.yml` | Push to `main` or `v*.*.*` tag | Build & push image to GHCR |
+| `.github/workflows/service-deploy.yml` | After publish succeeds on `main` or manual dispatch | Deploy/update Azure Container Apps |
+
+### GHCR image
+
+```
+ghcr.io/tkubica12/skills-demo-catalog/task-api:<tag>
+```
+
+Tags produced on every push to `main`:
+- `main` — latest from the default branch
+- `sha-<short>` — immutable pin to the exact commit
+
+Tags produced on a `v*.*.*` git tag:
+- `vX.Y.Z` — explicit version
+- `X.Y` — minor floating tag
+- `latest` — latest stable release
+
+### Required GitHub secrets
+
+Set these under **Settings → Secrets and variables → Actions → Secrets**:
+
+| Secret | Description |
+|---|---|
+| `AZURE_CREDENTIALS` | Service-principal JSON from `az ad sp create-for-rbac --sdk-auth` with `contributor` role on the resource group |
+
+Generate the secret:
+
+```bash
+az ad sp create-for-rbac \
+  --name "skills-demo-deploy" \
+  --role contributor \
+  --scopes /subscriptions/<subscription-id>/resourceGroups/<resource-group> \
+  --sdk-auth
+```
+
+Copy the entire JSON output as the `AZURE_CREDENTIALS` secret value.
+
+### Required GitHub repository variables
+
+Set these under **Settings → Secrets and variables → Actions → Variables**:
+
+| Variable | Example value | Description |
+|---|---|---|
+| `AZURE_RESOURCE_GROUP` | `rg-skills-demo` | Resource group containing the Container App |
+| `AZURE_CONTAINER_APP_NAME` | `task-api` | Name of the Azure Container App resource |
+| `AZURE_CONTAINER_APP_ENV` | `cae-skills-demo` | ACA managed environment (only needed for first-time creation) |
+| `AZURE_LOCATION` | `eastus` | Azure region (only needed for first-time creation) |
+
+### Public endpoint
+
+After a successful deploy the workflow prints the public FQDN. The format is:
+
+```
+https://<app-name>.<unique-id>.<region>.azurecontainerapps.io
+```
+
+Point the CLI and skill at it:
+
+```bash
+export TASK_API_URL=https://<your-fqdn>
+python skills/task-api-helper/scripts/task_cli.py list-tasks
+```
+
+If the consuming project repo uses a repository variable or `.env` file to hold `TASK_API_URL`, set it to the ACA FQDN after the first successful deploy.
+
+### Private GHCR images
+
+Packages in a public repository are publicly readable by default — no pull secret is needed for ACA to pull the image.  If the repository is private, create a GitHub PAT with `read:packages` scope, store it as a secret named `GHCR_TOKEN`, and pass it via `az containerapp registry set` or the `--registry-*` flags on `az containerapp create/update`.
+
 ## Publishing
 
 Validate the catalog structure without publishing:

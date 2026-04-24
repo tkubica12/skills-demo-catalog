@@ -68,7 +68,12 @@ curl -X POST http://localhost:8080/tasks/task-1/comments \
 
 Eight tasks are seeded on startup (five `waiting-for-response`, one `resolved`, one `in-progress`, one `open`). State is in-memory and resets on each container restart — no database required for the demo.
 
-## Planned next steps
+## Published image
 
-- Publish image to GHCR (`ghcr.io/tkubica12/skills-demo-catalog/task-api:latest`)
-- Deploy to Azure Container Apps
+```
+ghcr.io/tkubica12/skills-demo-catalog/task-api:<tag>
+```
+
+The CI/CD pipeline in `.github/workflows/service-publish.yml` builds and pushes this image automatically on every push to `main` and on `v*.*.*` tags.
+Azure Container Apps deployment is handled by `.github/workflows/service-deploy.yml`.
+See the top-level [README](../README.md) for required secrets, variables, and the public endpoint format.
