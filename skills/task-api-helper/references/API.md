@@ -4,15 +4,20 @@ This document describes the baseline Task API contract used by `skills/task-api-
 
 ## Base URL configuration
 
-Set the API root in one of two ways:
+Set the API root in this priority order:
 
-- environment variable: `TASK_API_URL`
 - command-line override: `python task_cli.py <command> --api-url https://tasks.internal.example.com`
+- `.env` in the installed skill folder
+- environment variable: `TASK_API_URL`
 
 Example:
 
 ```bash
-export TASK_API_URL="https://tasks.internal.example.com"
+# Inside the installed skill folder
+cp .env.example .env
+# edit .env so it contains:
+# TASK_API_URL=https://tasks.internal.example.com
+
 python task_cli.py list-tasks --status waiting-for-response
 ```
 
@@ -24,10 +29,11 @@ The API accepts a bearer token through the `Authorization` header.
 Authorization: Bearer <token>
 ```
 
-You can supply the token with:
+You can supply the token with, in this priority order:
 
-- `TASK_API_TOKEN`
 - `--token <token>`
+- `.env` in the installed skill folder
+- `TASK_API_TOKEN`
 
 Unauthenticated requests may still work in lower environments if the service is configured for anonymous read access.
 
@@ -134,20 +140,12 @@ Response:
 }
 ```
 
-### POST /tasks/bulk-comment
+## Notes
 
-**Planned, not yet implemented in the production baseline.**
-
-The catalog intentionally does not expose a `bulk-add-comment` CLI command until the centralized improvement process is complete. The benchmark harness in `tests/benchmark_bulk.py` uses a simulated mock implementation of this endpoint to estimate the upside before the API is standardized.
-
-Proposed request shape:
-
-```json
-{
-  "task_ids": ["task-1", "task-2"],
-  "text": "Reminder: please respond so we can close this task"
-}
-```
+The shared skill contract is defined by the documented endpoints above. The
+service used in this demo may expose additional internal or experimental
+endpoints, but consumers should rely on the published shared workflow unless an
+enhancement is accepted and released through the catalog.
 
 ## Error codes
 

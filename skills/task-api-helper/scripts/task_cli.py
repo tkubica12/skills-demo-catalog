@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """Command-line wrapper for the shared Task API REST service."""
 
-# bulk-add-comment is intentionally absent — see IMPROVEMENT-PROCESS.md
-
 from __future__ import annotations
 
 import argparse
 import json
 import os
 import sys
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
 
 DEFAULT_TIMEOUT_SECONDS = 30
+SKILL_ROOT = Path(__file__).resolve().parents[1]
+SKILL_DOTENV_PATH = SKILL_ROOT / ".env"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -60,15 +62,48 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+@lru_cache(maxsize=1)
+def load_skill_dotenv() -> dict[str, str]:
+    if not SKILL_DOTENV_PATH.exists():
+        return {}
+
+    values: dict[str, str] = {}
+    for raw_line in SKILL_DOTENV_PATH.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        values[key] = value
+    return values
+
+
+def resolve_config_value(cli_value: str | None, env_name: str) -> str:
+    if cli_value:
+        return cli_value.strip()
+
+    dotenv_value = load_skill_dotenv().get(env_name, "").strip()
+    if dotenv_value:
+        return dotenv_value
+
+    return os.getenv(env_name, "").strip()
+
+
 def resolve_base_url(args: argparse.Namespace) -> str:
-    base_url = (getattr(args, "api_url", None) or os.getenv("TASK_API_URL", "")).strip()
+    base_url = resolve_config_value(getattr(args, "api_url", None), "TASK_API_URL")
     if not base_url:
-        raise ValueError("TASK_API_URL is not set. Pass --api-url or export TASK_API_URL.")
+        raise ValueError(
+            "TASK_API_URL is not set. Pass --api-url, configure .env in the installed "
+            "skill folder, or export TASK_API_URL."
+        )
     return base_url.rstrip("/")
 
 
 def resolve_token(args: argparse.Namespace) -> str:
-    return (getattr(args, "token", None) or os.getenv("TASK_API_TOKEN", "")).strip()
+    return resolve_config_value(getattr(args, "token", None), "TASK_API_TOKEN")
 
 
 def pretty_print(payload: Any) -> None:

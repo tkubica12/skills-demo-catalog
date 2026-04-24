@@ -9,13 +9,13 @@ The `task-api-helper` skill is centrally maintained so every consumer gets the s
 ## Full lifecycle
 
 1. **Local experiment**  
-   A consumer team forks `task_cli.py` locally, adds the missing command in that private working copy, and validates it against their real workflow.
+   A consumer team forks `task_cli.py` locally, adds the proposed behavior in that private working copy, and validates it against their real workflow.
 2. **Benchmark**  
-   The team captures before/after timing data, usually by comparing the current loop against the experimental command. `tests/benchmark_bulk.py` is the reference benchmark harness.
+   The team captures before/after timing data, usually by comparing the current workflow against the experimental command. `tests/benchmark_bulk.py` is the reference benchmark harness.
 3. **Issue with template**  
    The team restores the local fork to the published baseline, then opens an issue with `.github/ISSUE_TEMPLATE/task-api-enhancement.yml` and includes the benchmark data.
 4. **Triage**  
-   Catalog maintainers review the problem statement, the measured pain, the proposed command syntax, and whether the API contract should change.
+   Catalog maintainers review the problem statement, the measured pain, the proposed command syntax, and whether the shared API or CLI contract should change.
 5. **Copilot or cloud agent implementation**  
    Once accepted, Copilot or the configured cloud agent implements the change in the central catalog.
 6. **Pull request**  
@@ -36,7 +36,7 @@ A valid local experiment must:
 5. restore the local fork so production stays on the published baseline
 6. open the enhancement issue with the data, not with the forked code
 
-For the canonical scenario — bulk-commenting on tasks in `waiting-for-response` status — the experiment should verify the proposed command against the mock server and, if available, the staging API, and include the full before/after timing from `tests/benchmark_bulk.py`.
+For a repetitive multi-step task workflow, the experiment should verify the proposed command against the mock server and, if available, the staging API, and include the full before/after timing from `tests/benchmark_bulk.py`.
 
 The local experiment is evidence, not an unofficial rollout path.
 

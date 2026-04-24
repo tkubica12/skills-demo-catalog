@@ -1,6 +1,6 @@
 ---
 name: task-api-helper
-description: 'Helper skill for teams using the shared Task API REST service and its task_cli.py wrapper. Use when the user needs to interact with project tasks: list tasks (optionally filtering by status such as waiting-for-response), get a task, add comments, or investigate missing bulk operations. The skill knows the API contract, CLI command set, and the improvement process for proposing new CLI commands upstream. Supports: list-tasks, get-task, add-comment. Does NOT support bulk-add-comment in the baseline — consumers who need that capability should follow the improvement process.'
+description: 'Helper skill for teams using the shared Task API REST service and its task_cli.py wrapper. Use when the user needs to interact with project tasks: list tasks, filter them by status, fetch task details, add comments, and work within the current shared Task API workflow. The skill knows the API contract, CLI command set, and the improvement process for proposing upstream enhancements when teams discover repetitive or awkward workflows.'
 license: MIT
 allowed-tools: Bash,Python
 ---
@@ -13,7 +13,7 @@ This skill helps you work with the **Task API** — a shared REST service for pr
 
 - Query or update project tasks via the REST API
 - Run the `task_cli.py` wrapper commands
-- Understand what the CLI can and cannot do today
+- Understand the current shared Task API workflow
 - Navigate the improvement process to propose a new command upstream
 
 ---
@@ -21,12 +21,25 @@ This skill helps you work with the **Task API** — a shared REST service for pr
 ## Environment Setup
 
 ```bash
-# Set the API base URL (required)
-export TASK_API_URL="https://tasks.internal.example.com"
+# Preferred: configure the installed skill locally
+cp .env.example .env
+
+# Then edit .env
+TASK_API_URL="https://tasks.internal.example.com"
 
 # Optional: authentication token
-export TASK_API_TOKEN="<your-token>"
+TASK_API_TOKEN="<your-token>"
 ```
+
+The installed skill reads configuration in this order:
+
+1. `--api-url` / `--token`
+2. `.env` in the installed skill folder
+3. shell environment variables
+
+Using `.env` in the installed skill folder is the preferred demo setup because
+the agent may execute in a different shell than the one where environment
+variables were exported.
 
 ---
 
@@ -58,31 +71,24 @@ Appends a comment to a single task. The comment text is a positional argument.
 
 ---
 
-## Known Limitation: No bulk-add-comment
+## Workflow evolution
 
-The baseline CLI does **not** support `bulk-add-comment`. Teams that need to annotate many tasks at once currently work around this with a shell loop:
-
-```bash
-for id in $(python task_cli.py list-tasks --status waiting-for-response | python -c "import sys,json; [print(t['id']) for t in json.load(sys.stdin)]"); do
-  python task_cli.py add-comment "$id" "Reminder: please respond so we can close this task"
-done
-```
-
-This is slow (one HTTP round-trip per task) and brittle in CI. If your team has measured this pain, open an enhancement issue in the catalog repository using the **Task API Enhancement** template. See `references/IMPROVEMENT-PROCESS.md` for the full flow.
+This skill is intentionally centrally maintained. If you discover that a common
+workflow feels repetitive, awkward, or missing a useful higher-level command,
+open an enhancement issue in the catalog repository using the **Task API
+Enhancement** template. See `references/IMPROVEMENT-PROCESS.md` for the full
+flow.
 
 ---
 
 ## Quick Diagnostics
 
 ```bash
-# Confirm the API is reachable
-curl -s "$TASK_API_URL/health"
-
-# List tasks waiting for a response
-python task_cli.py list-tasks --status waiting-for-response
-
 # Verify CLI is functional
 python task_cli.py --help
+
+# List tasks waiting for a response using the configured .env / --api-url / env var
+python task_cli.py list-tasks --status waiting-for-response
 ```
 
 ---
