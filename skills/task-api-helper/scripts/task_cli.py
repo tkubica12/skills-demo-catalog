@@ -180,18 +180,18 @@ def handle_bulk_add_comment(args: argparse.Namespace) -> int:
         task_ids = [t["id"] for t in tasks]
     else:
         task_ids = args.ids
+ 
+    if not task_ids:
+        print("No tasks matched the request.", file=sys.stderr)
+        return 3
 
-    results = []
-    for task_id in task_ids:
-        response = request_json(
-            args,
-            "POST",
-            f"/tasks/{parse.quote(task_id)}/comments",
-            payload={"text": args.comment},
-        )
-        results.append({"task_id": task_id, **response})
-
-    pretty_print({"ok": True, "updated": len(results), "results": results})
+    response = request_json(
+        args,
+        "POST",
+        "/tasks/bulk-comment",
+        payload={"task_ids": task_ids, "text": args.comment},
+    )
+    pretty_print(response)
     return 0
 
 

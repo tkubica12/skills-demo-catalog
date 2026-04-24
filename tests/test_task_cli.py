@@ -65,18 +65,18 @@ def test_bulk_add_comment_by_ids_succeeds() -> None:
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["ok"] is True
-    assert payload["updated"] == 2
-    assert len(payload["results"]) == 2
-    for entry in payload["results"]:
-        assert entry["task_id"] in ("task-1", "task-2")
-        assert entry["comment_id"].startswith("c-")
-
-
+    assert set(payload["updated"]) == {"task-1", "task-2"}
+ 
+ 
 def test_bulk_add_comment_by_status_succeeds() -> None:
     result = run_cli("bulk-add-comment", "--status", "waiting-for-response", "--comment", "status bulk hello")
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["ok"] is True
-    assert payload["updated"] >= 1
-    for entry in payload["results"]:
-        assert entry["comment_id"].startswith("c-")
+    assert set(payload["updated"]) == {"task-1", "task-2"}
+
+
+def test_bulk_add_comment_with_no_matches_fails() -> None:
+    result = run_cli("bulk-add-comment", "--status", "does-not-exist", "--comment", "status bulk hello")
+    assert result.returncode == 3
+    assert "No tasks matched the request." in result.stderr

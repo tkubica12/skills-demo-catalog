@@ -62,7 +62,7 @@ Appends a comment to a single task. The comment text is a positional argument.
 python task_cli.py bulk-add-comment (--ids <id>... | --status <status>) --comment <text> [--api-url <url>]
 ```
 
-Appends the same comment to multiple tasks in a single session. Provide either `--ids` with one or more task identifiers, or `--status` to target all tasks with that status. Returns a JSON summary with the number of tasks updated and each individual comment result.
+Appends the same comment to multiple tasks in a single request. Provide either `--ids` with one or more task identifiers, or `--status` to target all tasks with that status. Returns the bulk endpoint response including the updated task IDs.
 
 ---
 
