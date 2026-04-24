@@ -7,7 +7,7 @@ When assigned an enhancement issue:
 1. implement the new CLI command in `task_cli.py`
 2. update `API.md` and `SKILL.md`
 3. add or update tests
-4. run the benchmark
+4. run the benchmark workflow or, at minimum, gather both the low-level benchmark and the agent benchmark evidence when available
 5. open a PR
 
 Follow the improvement process in `skills/task-api-helper/references/IMPROVEMENT-PROCESS.md`.
@@ -18,4 +18,5 @@ PR title format:
 feat(task-api-helper): add <command-name> command (closes #<issue>)
 ```
 
-Always include before/after benchmark numbers in the PR description.
+Always include before/after benchmark numbers in the PR description, preferring
+the agent benchmark summary when it is available.

@@ -1,22 +1,33 @@
 name: CI Benchmark
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
+    paths:
+      - ".github/workflows/ci-benchmark.yml"
+      - "benchmarks/**"
+      - "pyproject.toml"
+      - "skills/task-api-helper/**"
+      - "tests/benchmark_bulk.py"
+      - "uv.lock"
   workflow_dispatch:
+    inputs:
+      model:
+        description: Copilot model used for the agent benchmark
+        required: false
+        default: gpt-4.1
+
+permissions:
+  contents: read
 
 jobs:
-  benchmark:
+  workflow-benchmark:
     runs-on: ubuntu-latest
     env:
       TASK_API_BASE_URL: http://127.0.0.1:18080
-      BENCHMARK_TOKEN_MODE: none
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -26,10 +37,77 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Run benchmark harness
+      - name: Run low-level workflow benchmark
         run: |
-          # Token measurement (Copilot CLI vs SDK) is configurable via BENCHMARK_TOKEN_MODE.
-          # Set it to 'cli' or 'sdk'. The default 'none' skips token counting.
           uv run python tests/mock_api_server.py &
+          server_pid=$!
+          trap "kill $server_pid" EXIT
           sleep 2
           uv run pytest tests/benchmark_bulk.py -v --tb=short
+
+  agent-benchmark:
+    runs-on: ubuntu-latest
+    env:
+      COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Resolve benchmark refs
+        id: benchmark-vars
+        run: |
+          if [ -n "${{ github.base_ref }}" ]; then
+            echo "ref=origin/${{ github.base_ref }}" >> "$GITHUB_OUTPUT"
+            echo "branch=${{ github.base_ref }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=origin/main" >> "$GITHUB_OUTPUT"
+            echo "branch=main" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -n "${{ inputs.model }}" ]; then
+            echo "model=${{ inputs.model }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "model=gpt-4.1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ensure baseline ref exists
+        run: git fetch origin "${{ steps.benchmark-vars.outputs.branch }}" --depth=1
+
+      - name: Skip when Copilot benchmark token is missing
+        if: env.COPILOT_GITHUB_TOKEN == ''
+        run: echo "::notice::Skipping agent benchmark because COPILOT_GITHUB_TOKEN is not configured."
+
+      - name: Run agent benchmark
+        if: env.COPILOT_GITHUB_TOKEN != ''
+        run: |
+          uv run python benchmarks/agent_benchmark.py \
+            --baseline-ref "${{ steps.benchmark-vars.outputs.ref }}" \
+            --model "${{ steps.benchmark-vars.outputs.model }}" \
+            --output-json benchmark-report.json \
+            --output-markdown benchmark-summary.md
+
+      - name: Add benchmark summary
+        if: env.COPILOT_GITHUB_TOKEN != '' && always()
+        run: |
+          if [ -f benchmark-summary.md ]; then
+            cat benchmark-summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload benchmark artifact
+        if: env.COPILOT_GITHUB_TOKEN != '' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-benchmark-report
+          path: |
+            benchmark-report.json
+            benchmark-summary.md

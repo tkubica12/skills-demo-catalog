@@ -13,16 +13,18 @@ The `task-api-helper` skill is centrally maintained so every consumer gets the s
 2. **Benchmark**  
    The team captures before/after evidence from that local trial — timing data when relevant, but also reliability improvements, fewer retries, fewer manual steps, or cleaner behavior.
 3. **Issue with template**  
-   The team restores the local changes to the published baseline, then opens an issue with `.github/ISSUE_TEMPLATE/task-api-enhancement.yml` and includes the local proof-of-concept evidence.
-4. **Triage**  
+    The team restores the local changes to the published baseline, then opens an issue with `.github/ISSUE_TEMPLATE/task-api-enhancement.yml` and includes the local proof-of-concept evidence.
+4. **Advisory triage**  
+   A GitHub Agentic Workflow can add an early recommendation comment and an advisory label such as `copilot-recommended`, but this does not replace human maintainer review. In this repo that workflow is backed by gh-aw and needs `COPILOT_GITHUB_TOKEN` configured in Actions.
+5. **Triage**  
    Catalog maintainers review the problem statement, the measured pain, the proposed command syntax, and whether the shared API or CLI contract should change.
-5. **Copilot or cloud agent implementation**  
+6. **Copilot or cloud agent implementation**  
    Once accepted, Copilot or the configured cloud agent implements the change in the central catalog.
-6. **Pull request**  
+7. **Pull request**  
    The PR updates `task_cli.py`, `API.md`, `SKILL.md`, tests, and benchmark evidence.
-7. **Catalog release**  
+8. **Catalog release**  
    After merge, the catalog is tagged and released.
-8. **Consumer update**  
+9. **Consumer update**  
    Consumer repositories update their installed skill version and stop carrying any local fork.
 
 ## Downstream consumer rule
@@ -59,22 +61,26 @@ The local experiment is evidence, not an unofficial rollout path.
 
 ## Catalog-side benchmark CI workflow
 
-`.github/workflows/ci-benchmark.yml` runs the benchmark harness on every push, pull request, and manual dispatch. The workflow:
+`.github/workflows/ci-benchmark.yml` now has two benchmark layers:
 
-1. installs Python plus the lightweight test dependencies
-2. starts `tests/mock_api_server.py`
-3. runs `pytest tests/benchmark_bulk.py -v --tb=short`
-4. prints the baseline loop time, simulated bulk time, and computed speedup
+1. **Low-level workflow benchmark**  
+   Starts `tests/mock_api_server.py`, runs `pytest tests/benchmark_bulk.py -v --tb=short`, and gives a fast deterministic signal about the raw workflow delta between repeated single-task calls and the simulated bulk endpoint.
+2. **Agent benchmark**  
+   Runs `benchmarks/agent_benchmark.py`, which compares the installed skill from `main` with the installed skill from the current patch by running the same Copilot task against both in isolated workspaces.
+
+The agent benchmark is the stronger evidence for central skill evolution because
+it measures the real agent workflow, not just the HTTP wrapper.
 
 This is catalog-internal validation. Downstream repos are not expected to
 contain these exact benchmark files.
 
 ## Token measurement note
 
-Token measurement is optional. The benchmark workflow reads `BENCHMARK_TOKEN_MODE`:
+Token measurement is no longer described as a placeholder mode switch. The
+agent benchmark uses GitHub Copilot SDK session events instead:
 
-- `none` (default): skip token counting entirely
-- `cli`: measure using Copilot CLI-style token accounting when available
-- `sdk`: measure using SDK-side token accounting when available
+- `assistant.usage` for input/output token counts and per-call API duration
+- `session.shutdown` for total premium requests and total API duration
 
-If CI does not have the necessary token source, the measurement can be deferred without blocking the performance comparison itself. See `.github/workflows/ci-benchmark.yml` for the active configuration.
+If the repository does not have `COPILOT_GITHUB_TOKEN` configured for CI, the
+agent benchmark is skipped cleanly and the low-level benchmark still runs.
