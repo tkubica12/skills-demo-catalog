@@ -1,0 +1,78 @@
+name: Task API Enhancement
+description: Propose an enhancement for the task-api-helper skill or its companion CLI.
+title: "[Enhancement] task-api-helper: "
+labels:
+  - task-api-enhancement
+  - needs-triage
+body:
+  - type: dropdown
+    id: affected-command
+    attributes:
+      label: Affected CLI command
+      description: Which command or area is affected?
+      options:
+        - list-tasks
+        - get-task
+        - add-comment
+        - new-command
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: painful-workflow
+    attributes:
+      label: Painful workflow
+      description: Describe the current manual workaround and why it hurts.
+      placeholder: |
+        Today we loop over every open task and run add-comment once per task.
+        This adds several seconds to CI and is brittle when a single request fails.
+    validations:
+      required: true
+
+  - type: textarea
+    id: local-experiment-summary
+    attributes:
+      label: Local experiment summary
+      description: What did you implement locally to prove the idea works?
+      placeholder: |
+        I forked task_cli.py locally, added a bulk-add-comment command, and validated it against the mock server plus our staging API.
+    validations:
+      required: true
+
+  - type: textarea
+    id: benchmark-results
+    attributes:
+      label: Before/After benchmark results
+      description: Include timing data from the local experiment.
+      placeholder: |
+        Baseline and experiment timings, for example from tests/benchmark_bulk.py:
+        - Baseline loop: 1.20s
+        - Experimental bulk call: 0.10s
+        - Speedup: 12.00x
+    validations:
+      required: true
+
+  - type: input
+    id: proposed-command
+    attributes:
+      label: Proposed new CLI command
+      description: Provide the exact command syntax you want to standardize.
+      placeholder: python task_cli.py bulk-add-comment --project PROJ --message "Sprint closed"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: restore-confirmation
+    attributes:
+      label: Baseline restoration confirmation
+      options:
+        - label: I confirm the local changes were NOT committed to production and my local fork has been restored to the published baseline.
+          required: true
+
+  - type: input
+    id: team-project
+    attributes:
+      label: Team / project
+      description: Helps maintainers prioritize the request.
+      placeholder: Platform Engineering / acme-payments

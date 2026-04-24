@@ -1,0 +1,35 @@
+name: CI Benchmark
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    env:
+      TASK_API_BASE_URL: http://127.0.0.1:18080
+      BENCHMARK_TOKEN_MODE: none
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install pytest requests
+
+      - name: Run benchmark harness
+        run: |
+          # Token measurement (Copilot CLI vs SDK) is configurable via BENCHMARK_TOKEN_MODE.
+          # Set it to 'cli' or 'sdk'. The default 'none' skips token counting.
+          python tests/mock_api_server.py &
+          sleep 2
+          pytest tests/benchmark_bulk.py -v --tb=short
