@@ -10,8 +10,7 @@ This repository is a central GitHub Copilot skill catalog for the `task-api-help
 - the supported `task_cli.py` commands that wrap the REST API
 - the improvement path for proposing new commands upstream
 
-The CLI is centrally versioned. It supports `list-tasks`, `get-task`,
-`add-comment`, and `bulk-add-comment`.
+The important baseline rule is simple: the CLI is centrally versioned and intentionally small. It supports `list-tasks`, `get-task`, and `add-comment` today.
 
 ## Installing the skill with `gh skill install`
 
@@ -29,7 +28,6 @@ The baseline CLI lives at `skills/task-api-helper/scripts/task_cli.py`.
 python skills/task-api-helper/scripts/task_cli.py list-tasks [--status <status>] [--api-url <url>]
 python skills/task-api-helper/scripts/task_cli.py get-task TASK_ID [--api-url <url>]
 python skills/task-api-helper/scripts/task_cli.py add-comment TASK_ID "Your comment text" [--api-url <url>]
-python skills/task-api-helper/scripts/task_cli.py bulk-add-comment (--ids <task-id> [<task-id> ...] | --status <status>) --comment "Your comment text" [--api-url <url>]
 ```
 
 Environment variables:
@@ -44,24 +42,27 @@ $env:TASK_API_URL = "https://tasks.internal.example.com"
 $env:TASK_API_TOKEN = "<optional-bearer-token>"
 ```
 
-## Bulk add comment
+## Known limitation — no bulk-add-comment
 
-The catalog now exposes `bulk-add-comment` for the central pain point from the
-demo:
-
-```sh
-python skills/task-api-helper/scripts/task_cli.py bulk-add-comment \
-  --status waiting-for-response \
-  --comment "Reminder: please respond so we can close this task"
-```
-
-You can also target explicit IDs:
+The baseline CLI does **not** expose `bulk-add-comment`. Teams that need to comment on many tasks currently use a loop such as:
 
 ```sh
-python skills/task-api-helper/scripts/task_cli.py bulk-add-comment \
-  --ids task-1 task-2 \
-  --comment "Reminder: please respond so we can close this task"
+# Linux / macOS
+for id in $(python skills/task-api-helper/scripts/task_cli.py list-tasks --status waiting-for-response | python -c "import sys,json; [print(t['id']) for t in json.load(sys.stdin)]"); do
+  python skills/task-api-helper/scripts/task_cli.py add-comment "$id" "Reminder: please respond so we can close this task"
+done
 ```
+
+```powershell
+# Windows (PowerShell)
+$ids = python skills/task-api-helper/scripts/task_cli.py list-tasks --status waiting-for-response |
+       python -c "import sys,json; [print(t['id']) for t in json.load(sys.stdin)]"
+foreach ($id in $ids) {
+  python skills/task-api-helper/scripts/task_cli.py add-comment $id "Reminder: please respond so we can close this task"
+}
+```
+
+That workaround is acceptable for small batches but is slow and brittle in CI because it performs one HTTP round-trip per task.
 
 ## Project-side local experiment workflow
 

@@ -136,29 +136,16 @@ Response:
 
 ### POST /tasks/bulk-comment
 
-Add the same comment to multiple tasks in a single request. The
-`bulk-add-comment` CLI command resolves the target task IDs and then calls this
-endpoint once.
+**Planned, not yet implemented in the production baseline.**
 
-Request:
+The catalog intentionally does not expose a `bulk-add-comment` CLI command until the centralized improvement process is complete. The benchmark harness in `tests/benchmark_bulk.py` uses a simulated mock implementation of this endpoint to estimate the upside before the API is standardized.
+
+Proposed request shape:
 
 ```json
 {
   "task_ids": ["task-1", "task-2"],
   "text": "Reminder: please respond so we can close this task"
-}
-```
-
-Response:
-
-```json
-{
-  "ok": true,
-  "updated": ["task-1", "task-2"],
-  "comment_ids": {
-    "task-1": "c-a3c17f40",
-    "task-2": "c-9f0b1d25"
-  }
 }
 ```
 
