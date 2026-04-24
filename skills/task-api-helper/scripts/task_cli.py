@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Command-line wrapper for the shared Task API REST service."""
 
-# bulk-add-comment is intentionally absent — see IMPROVEMENT-PROCESS.md
-
 from __future__ import annotations
 
 import argparse
@@ -56,6 +54,29 @@ def build_parser() -> argparse.ArgumentParser:
     comment_parser.add_argument("task_id", help="Task identifier to update.")
     comment_parser.add_argument("text", help="Comment text to append to the task.")
     comment_parser.set_defaults(handler=handle_add_comment)
+
+    bulk_parser = subparsers.add_parser(
+        "bulk-add-comment",
+        parents=[shared],
+        help="Append the same comment to multiple tasks in a single session.",
+    )
+    target_group = bulk_parser.add_mutually_exclusive_group(required=True)
+    target_group.add_argument(
+        "--ids",
+        nargs="+",
+        metavar="ID",
+        help="One or more task identifiers to comment on.",
+    )
+    target_group.add_argument(
+        "--status",
+        help="Comment on all tasks with this status, for example waiting-for-response.",
+    )
+    bulk_parser.add_argument(
+        "--comment",
+        required=True,
+        help="Comment text to append to every resolved task.",
+    )
+    bulk_parser.set_defaults(handler=handle_bulk_add_comment)
 
     return parser
 
@@ -150,6 +171,27 @@ def handle_add_comment(args: argparse.Namespace) -> int:
         payload={"text": args.text},
     )
     pretty_print(response)
+    return 0
+
+
+def handle_bulk_add_comment(args: argparse.Namespace) -> int:
+    if args.status is not None:
+        tasks = request_json(args, "GET", "/tasks", query={"status": args.status})
+        task_ids = [t["id"] for t in tasks]
+    else:
+        task_ids = args.ids
+
+    results = []
+    for task_id in task_ids:
+        response = request_json(
+            args,
+            "POST",
+            f"/tasks/{parse.quote(task_id)}/comments",
+            payload={"text": args.comment},
+        )
+        results.append({"task_id": task_id, **response})
+
+    pretty_print({"ok": True, "updated": len(results), "results": results})
     return 0
 
 

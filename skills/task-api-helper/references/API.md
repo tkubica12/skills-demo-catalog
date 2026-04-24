@@ -138,16 +138,7 @@ Response:
 
 **Planned, not yet implemented in the production baseline.**
 
-The catalog intentionally does not expose a `bulk-add-comment` CLI command until the centralized improvement process is complete. The benchmark harness in `tests/benchmark_bulk.py` uses a simulated mock implementation of this endpoint to estimate the upside before the API is standardized.
-
-Proposed request shape:
-
-```json
-{
-  "task_ids": ["task-1", "task-2"],
-  "text": "Reminder: please respond so we can close this task"
-}
-```
+The catalog intentionally does not expose this endpoint directly — the `bulk-add-comment` CLI command achieves the same result by posting to `POST /tasks/{id}/comments` for each resolved task within a single process invocation.
 
 ## Error codes
 
