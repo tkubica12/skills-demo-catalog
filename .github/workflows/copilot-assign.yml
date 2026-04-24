@@ -18,9 +18,8 @@ jobs:
       contents: read
     env:
       COPILOT_TOKEN: ${{ secrets.COPILOT_TOKEN }}
-      # The GitHub login of the Copilot coding agent account to assign.
-      # In most organizations this is 'Copilot' (the GitHub Copilot bot user).
-      COPILOT_ASSIGNEE_LOGIN: Copilot
+      # The GitHub login of the Copilot coding agent actor.
+      COPILOT_ASSIGNEE_LOGIN: copilot-swe-agent
 
     steps:
       - name: Skip when PAT secret is absent
@@ -40,40 +39,55 @@ jobs:
           # Copilot coding agent may only activate when assigned by a qualifying PAT.
           github-token: ${{ env.COPILOT_TOKEN }}
           script: |
-            // Resolve the Copilot bot user's node ID via GraphQL, then assign the issue.
+            // Resolve the Copilot coding agent actor via suggestedActors, then assign the issue
+            // using the preview mutation that starts the cloud-agent flow.
             //
             // Limitations (as of Copilot coding agent preview):
             //   - The COPILOT_TOKEN must be a classic PAT with 'repo' scope.
             //   - Copilot coding agent must be enabled for the organization.
             //   - The repository must be in the agent's allowed scope.
-            //   - If the user lookup returns null the workflow fails loudly rather than silently.
-            const login = process.env.COPILOT_ASSIGNEE_LOGIN || "Copilot";
+            //   - If the bot is not suggested for assignment the workflow fails loudly.
+            const login = process.env.COPILOT_ASSIGNEE_LOGIN || "copilot-swe-agent";
             const assignableId = context.payload.issue.node_id;
+            const targetRepositoryId = context.payload.repository.node_id;
 
             const lookup = await github.graphql(
-              `query ($login: String!) {
-                user(login: $login) {
-                  id
-                  login
+              `query ($owner: String!, $repo: String!, $login: String!) {
+                repository(owner: $owner, name: $repo) {
+                  suggestedActors(capabilities: [CAN_BE_ASSIGNED], first: 20) {
+                    nodes {
+                      __typename
+                      ... on User { login id }
+                      ... on Bot { login id }
+                    }
+                  }
                 }
               }`,
-              { login }
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                login,
+              }
             );
 
-            if (!lookup.user) {
+            const actor = lookup.repository.suggestedActors.nodes.find((node) => node.login === login);
+            if (!actor) {
               core.setFailed(
-                `Could not resolve GitHub user '${login}'. ` +
-                `Verify COPILOT_ASSIGNEE_LOGIN is correct and the account exists.`
+                `Could not resolve assignable Copilot actor '${login}'. ` +
+                `Verify the repository has Copilot coding agent enabled and the login is correct.`
               );
               return;
             }
 
             await github.graphql(
-              `mutation ($assignableId: ID!, $assigneeIds: [ID!]!) {
-                addAssigneesToAssignable(
+              `mutation ($assignableId: ID!, $actorIds: [ID!]!, $targetRepositoryId: ID!) {
+                replaceActorsForAssignable(
                   input: {
                     assignableId: $assignableId
-                    assigneeIds: $assigneeIds
+                    actorIds: $actorIds
+                    agentAssignment: {
+                      targetRepositoryId: $targetRepositoryId
+                    }
                   }
                 ) {
                   assignable {
@@ -85,8 +99,14 @@ jobs:
               }`,
               {
                 assignableId,
-                assigneeIds: [lookup.user.id],
-              }
+                actorIds: [actor.id],
+                targetRepositoryId,
+              },
+              {
+                headers: {
+                  "GraphQL-Features": "issues_copilot_assignment_api_support",
+                },
+              },
             );
 
-            core.info(`Assigned issue #${context.issue.number} to ${lookup.user.login}.`);
+            core.info(`Assigned issue #${context.issue.number} to ${actor.login}.`);
