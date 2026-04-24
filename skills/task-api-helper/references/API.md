@@ -140,6 +140,46 @@ Response:
 }
 ```
 
+## bulk-add-comment CLI command
+
+The `bulk-add-comment` CLI command posts the same comment to multiple tasks using the
+`POST /tasks/{id}/comments` endpoint above. It is not a single bulk API call; the CLI
+iterates over the resolved task list and posts individually with automatic exponential
+backoff retry on HTTP 429 responses.
+
+```bash
+# Comment on all tasks with a given status
+python task_cli.py bulk-add-comment "Following up." --status waiting-for-response
+
+# Comment on an explicit list of tasks
+python task_cli.py bulk-add-comment "Following up." --task-ids task-1 task-2 task-3
+
+# Preview without posting
+python task_cli.py bulk-add-comment "Following up." --status waiting-for-response --dry-run
+```
+
+Retry behaviour: on HTTP 429 the command waits 2 s then doubles the delay for each
+subsequent retry (2, 4, 8, 16, 32 seconds), up to 5 retries per task.
+
+Output (stdout, JSON):
+
+```json
+{
+  "ok": true,
+  "updated": ["task-1", "task-2"],
+  "failed": []
+}
+```
+
+Dry-run output:
+
+```json
+{
+  "dry_run": true,
+  "would_update": ["task-1", "task-2"]
+}
+```
+
 ## Notes
 
 The shared skill contract is defined by the documented endpoints above. The

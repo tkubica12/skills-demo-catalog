@@ -17,6 +17,7 @@ from urllib import error, parse, request
 
 DEFAULT_TIMEOUT_SECONDS = 30
 TRANSIENT_RETRY_DELAYS_SECONDS = (0.25, 0.5, 1.0)
+BULK_COMMENT_RETRY_DELAYS_SECONDS = (2, 4, 8, 16, 32)
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SKILL_DOTENV_PATH = SKILL_ROOT / ".env"
 
@@ -62,6 +63,30 @@ def build_parser() -> argparse.ArgumentParser:
     comment_parser.add_argument("task_id", help="Task identifier to update.")
     comment_parser.add_argument("text", help="Comment text to append to the task.")
     comment_parser.set_defaults(handler=handle_add_comment)
+
+    bulk_parser = subparsers.add_parser(
+        "bulk-add-comment",
+        parents=[shared],
+        help="Add the same comment to multiple tasks with automatic retry on rate limits.",
+    )
+    bulk_parser.add_argument("text", help="Comment text to append to each task.")
+    bulk_target = bulk_parser.add_mutually_exclusive_group(required=True)
+    bulk_target.add_argument(
+        "--status",
+        help="Filter tasks by status and comment on all matches, for example waiting-for-response.",
+    )
+    bulk_target.add_argument(
+        "--task-ids",
+        nargs="+",
+        metavar="TASK_ID",
+        help="Explicit list of task IDs to comment on.",
+    )
+    bulk_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview affected tasks without posting any comments.",
+    )
+    bulk_parser.set_defaults(handler=handle_bulk_add_comment)
 
     return parser
 
@@ -231,6 +256,92 @@ def handle_add_comment(args: argparse.Namespace) -> int:
     )
     pretty_print(response)
     return 0
+
+
+def _add_comment_with_429_retry(
+    args: argparse.Namespace, task_id: str, text: str
+) -> dict[str, Any] | None:
+    """Post a comment to a task, retrying up to 5 times on HTTP 429 with exponential backoff."""
+    base_url = resolve_base_url(args)
+    url = f"{base_url}/tasks/{parse.quote(task_id)}/comments"
+
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    token = resolve_token(args)
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    data = json.dumps({"text": text}).encode("utf-8")
+    max_retries = len(BULK_COMMENT_RETRY_DELAYS_SECONDS)
+    retry_count = 0
+
+    while True:
+        http_request = request.Request(url, data=data, headers=headers, method="POST")
+        try:
+            with request.urlopen(http_request, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
+                return decode_response(response)  # type: ignore[return-value]
+        except error.HTTPError as exc:
+            if exc.code == 429 and retry_count < max_retries:
+                delay = BULK_COMMENT_RETRY_DELAYS_SECONDS[retry_count]
+                retry_count += 1
+                print(
+                    f"  [rate limited] retrying {task_id} in {delay}s "
+                    f"(attempt {retry_count}/{max_retries})...",
+                    file=sys.stderr,
+                )
+                time.sleep(delay)
+                continue
+            body = exc.read().decode("utf-8", errors="replace")
+            try:
+                parsed_body = json.loads(body) if body else {"error": exc.reason}
+                formatted_body = json.dumps(parsed_body, indent=2, sort_keys=True)
+            except json.JSONDecodeError:
+                formatted_body = body or str(exc.reason)
+            print(f"  HTTP {exc.code} on {task_id}: {formatted_body}", file=sys.stderr)
+            return None
+        except error.URLError as exc:
+            print(f"  Request failed for {task_id}: {exc.reason}", file=sys.stderr)
+            return None
+
+
+def handle_bulk_add_comment(args: argparse.Namespace) -> int:
+    if args.status is not None:
+        print(f"Fetching tasks with status '{args.status}'...", file=sys.stderr)
+        response = request_json(args, "GET", "/tasks", query={"status": args.status})
+        task_ids: list[str] = [t["id"] for t in response]
+    else:
+        task_ids = list(args.task_ids)
+
+    if not task_ids:
+        print("No tasks found.", file=sys.stderr)
+        pretty_print({"ok": True, "updated": [], "failed": []})
+        return 0
+
+    print(
+        f"Found {len(task_ids)} task(s): {', '.join(task_ids)}",
+        file=sys.stderr,
+    )
+
+    if args.dry_run:
+        print("Dry-run mode — no comments will be posted.", file=sys.stderr)
+        pretty_print({"dry_run": True, "would_update": task_ids})
+        return 0
+
+    updated: list[str] = []
+    failed: list[str] = []
+    for task_id in task_ids:
+        print(f"Commenting on {task_id}...", file=sys.stderr)
+        result = _add_comment_with_429_retry(args, task_id, args.text)
+        if result is not None:
+            comment_id = result.get("comment_id", "")
+            print(f"  \u2713 {task_id} \u2192 comment {comment_id}", file=sys.stderr)
+            updated.append(task_id)
+        else:
+            print(f"  \u2717 {task_id} failed", file=sys.stderr)
+            failed.append(task_id)
+
+    print(f"Done. {len(updated)} task(s) updated.", file=sys.stderr)
+    pretty_print({"ok": not failed, "updated": updated, "failed": failed})
+    return 1 if failed else 0
 
 
 def main(argv: list[str] | None = None) -> int:

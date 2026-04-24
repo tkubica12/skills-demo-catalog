@@ -154,7 +154,81 @@ def test_request_json_does_not_retry_http_429(monkeypatch: pytest.MonkeyPatch, c
     assert "HTTP 429" in capsys.readouterr().err
 
 
-def test_bulk_add_comment_not_available() -> None:
-    result = run_cli("bulk-add-comment")
+def test_bulk_add_comment_dry_run_task_ids() -> None:
+    result = run_cli("bulk-add-comment", "Following up.", "--task-ids", "task-1", "task-2", "--dry-run")
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is True
+    assert "task-1" in payload["would_update"]
+    assert "task-2" in payload["would_update"]
+
+
+def test_bulk_add_comment_dry_run_status() -> None:
+    result = run_cli("bulk-add-comment", "Following up.", "--status", "waiting-for-response", "--dry-run")
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is True
+    assert isinstance(payload["would_update"], list)
+    assert len(payload["would_update"]) >= 1
+
+
+def test_bulk_add_comment_task_ids() -> None:
+    result = run_cli("bulk-add-comment", "Bulk comment test.", "--task-ids", "task-1", "task-2")
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert "task-1" in payload["updated"]
+    assert "task-2" in payload["updated"]
+    assert payload["failed"] == []
+
+
+def test_bulk_add_comment_status() -> None:
+    result = run_cli("bulk-add-comment", "Bulk status comment.", "--status", "waiting-for-response")
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert isinstance(payload["updated"], list)
+    assert len(payload["updated"]) >= 1
+    assert payload["failed"] == []
+
+
+def test_bulk_add_comment_429_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts: dict[str, int] = {"count": 0}
+    slept: list[float] = []
+
+    class FakeResponse:
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
+            return False
+
+        def read(self) -> bytes:
+            return b'{"ok": true, "comment_id": "c-test1234"}'
+
+    def fake_urlopen(*args: object, **kwargs: object) -> FakeResponse:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise task_cli.error.HTTPError(
+                url="https://example.test/tasks/task-1/comments",
+                code=429,
+                msg="Too Many Requests",
+                hdrs=None,
+                fp=io.BytesIO(b'{"detail": "Rate limit exceeded."}'),
+            )
+        return FakeResponse()
+
+    monkeypatch.setattr(task_cli.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(task_cli.time, "sleep", lambda s: slept.append(s))
+
+    args = argparse.Namespace(api_url="https://example.test", token=None, task_ids=["task-1"], status=None, dry_run=False, text="retry test")
+    exit_code = task_cli.handle_bulk_add_comment(args)
+
+    assert exit_code == 0
+    assert attempts["count"] == 2
+    assert slept == [2]
+
+
+def test_bulk_add_comment_requires_status_or_task_ids() -> None:
+    result = run_cli("bulk-add-comment", "Some comment text")
     assert result.returncode != 0
-    assert "invalid choice" in result.stderr
