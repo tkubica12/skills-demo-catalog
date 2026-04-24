@@ -20,14 +20,14 @@ BASELINE_DURATION: float | None = None
 
 
 def _base_url() -> str:
-    return os.environ.get("TASK_API_BASE_URL", "http://127.0.0.1:18080")
+    return os.environ.get("TASK_API_URL", "http://127.0.0.1:18080")
 
 
-def _run_add_comment(task_id: str, message: str) -> subprocess.CompletedProcess[str]:
+def _run_add_comment(task_id: str, text: str) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
-    env["TASK_API_BASE_URL"] = _base_url()
+    env["TASK_API_URL"] = _base_url()
     return subprocess.run(
-        [sys.executable, str(CLI_PATH), "add-comment", task_id, "--message", message],
+        [sys.executable, str(CLI_PATH), "add-comment", task_id, text],
         capture_output=True,
         text=True,
         check=False,
@@ -36,18 +36,20 @@ def _run_add_comment(task_id: str, message: str) -> subprocess.CompletedProcess[
 
 
 def _measure_baseline() -> float:
+    # Simulate the workaround: loop over waiting-for-response tasks and add a comment to each.
     start = time.perf_counter()
-    for index, task_id in enumerate(["task-1", "task-2", "task-3"], start=1):
-        result = _run_add_comment(task_id, f"benchmark-{index}")
+    for index, task_id in enumerate(["task-1", "task-2"], start=1):
+        result = _run_add_comment(task_id, f"Following up — benchmark-{index}")
         assert result.returncode == 0, result.stderr
     return time.perf_counter() - start
 
 
 def _measure_simulated_bulk() -> float:
+    # Simulate the proposed bulk endpoint that is NOT yet in the CLI baseline.
     payload = json.dumps(
         {
-            "task_ids": ["task-1", "task-2", "task-3"],
-            "message": "benchmark-bulk",
+            "task_ids": ["task-1", "task-2"],
+            "text": "Following up — bulk benchmark",
         }
     ).encode("utf-8")
     request_obj = urllib.request.Request(

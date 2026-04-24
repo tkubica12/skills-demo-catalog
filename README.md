@@ -25,15 +25,15 @@ After installation, invoke it from Copilot Chat in the appropriate client for yo
 The baseline CLI lives at `skills/task-api-helper/scripts/task_cli.py`.
 
 ```bash
-python skills/task-api-helper/scripts/task_cli.py list-tasks [--status open|closed|all] [--project PROJECT_ID]
-python skills/task-api-helper/scripts/task_cli.py get-task TASK_ID
-python skills/task-api-helper/scripts/task_cli.py add-comment TASK_ID --message "Your comment"
+python skills/task-api-helper/scripts/task_cli.py list-tasks [--status <status>] [--api-url <url>]
+python skills/task-api-helper/scripts/task_cli.py get-task TASK_ID [--api-url <url>]
+python skills/task-api-helper/scripts/task_cli.py add-comment TASK_ID "Your comment text" [--api-url <url>]
 ```
 
 Environment variables:
 
 ```bash
-export TASK_API_BASE_URL="https://tasks.internal.example.com"
+export TASK_API_URL="https://tasks.internal.example.com"
 export TASK_API_TOKEN="<optional-bearer-token>"
 ```
 
@@ -42,8 +42,8 @@ export TASK_API_TOKEN="<optional-bearer-token>"
 The baseline CLI does **not** expose `bulk-add-comment`. Teams that need to comment on many tasks currently use a loop such as:
 
 ```bash
-for id in $(python skills/task-api-helper/scripts/task_cli.py list-tasks --status open --project PROJ --format ids); do
-  python skills/task-api-helper/scripts/task_cli.py add-comment "$id" --message "Sprint closed — see board for details"
+for id in $(python skills/task-api-helper/scripts/task_cli.py list-tasks --status waiting-for-response | python -c "import sys,json; [print(t['id']) for t in json.load(sys.stdin)]"); do
+  python skills/task-api-helper/scripts/task_cli.py add-comment "$id" "Reminder: please respond so we can close this task"
 done
 ```
 
@@ -68,11 +68,12 @@ The repository is scaffolded for an issue-driven enhancement lifecycle:
 
 1. A consumer files `.github/ISSUE_TEMPLATE/task-api-enhancement.yml`.
 2. The issue gets `task-api-enhancement` and `needs-triage`.
-3. `.github/workflows/copilot-assign.yml` can auto-assign the issue to the Copilot coding agent when a `COPILOT_TOKEN` secret is configured.
-4. The `skill-maintainer` agent follows `.github/agents/skill-maintainer.md`.
-5. The implementation updates `task_cli.py`, `API.md`, and `SKILL.md`, adds tests, and runs benchmarks.
-6. A PR is opened, benchmark results are included, and the change is reviewed.
-7. After merge, the catalog is released and consumers update to the new tag.
+3. A maintainer reviews and adds `accepted` when approved for implementation.
+4. `.github/workflows/copilot-assign.yml` triggers on the `accepted` label and auto-assigns the issue to the Copilot coding agent when a `COPILOT_TOKEN` secret (personal access token with `repo` scope) is configured. Assignment uses the GitHub GraphQL API. Without the secret the step is skipped with a clear log message.
+5. The `skill-maintainer` agent follows `.github/agents/skill-maintainer.md`.
+6. The implementation updates `task_cli.py`, `API.md`, and `SKILL.md`, adds tests, and runs benchmarks.
+7. A PR is opened, benchmark results are included, and the change is reviewed.
+8. After merge, the catalog is released and consumers update to the new tag.
 
 ## Benchmark story
 
@@ -108,7 +109,7 @@ Fully automated today:
 
 Scaffolded but dependent on external setup:
 
-- `.github/workflows/copilot-assign.yml` requires a `COPILOT_TOKEN` secret with `assignees:write`
+- `.github/workflows/copilot-assign.yml` requires a `COPILOT_TOKEN` secret (personal access token with `repo` scope); triggers on the `accepted` label after triage, not on every filed issue. **Limitation:** Copilot coding agent assignment via GraphQL requires the organization to have the Copilot coding agent feature enabled and the repository to be in scope.
 - Copilot cloud-agent implementation requires an active Copilot coding agent subscription and repository access
 
 ## Repository labels

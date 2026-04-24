@@ -33,7 +33,7 @@ def _select_port() -> int:
 
 @pytest.fixture(scope="session", autouse=True)
 def mock_server():
-    original_base_url = os.environ.get("TASK_API_BASE_URL")
+    original_base_url = os.environ.get("TASK_API_URL")
     original_token = os.environ.get("TASK_API_TOKEN")
 
     if original_base_url:
@@ -47,7 +47,7 @@ def mock_server():
     thread.start()
 
     base_url = f"http://127.0.0.1:{port}"
-    os.environ["TASK_API_BASE_URL"] = base_url
+    os.environ["TASK_API_URL"] = base_url
     os.environ.pop("TASK_API_TOKEN", None)
 
     try:
@@ -67,9 +67,9 @@ def mock_server():
         thread.join(timeout=5)
 
         if original_base_url is None:
-            os.environ.pop("TASK_API_BASE_URL", None)
+            os.environ.pop("TASK_API_URL", None)
         else:
-            os.environ["TASK_API_BASE_URL"] = original_base_url
+            os.environ["TASK_API_URL"] = original_base_url
 
         if original_token is None:
             os.environ.pop("TASK_API_TOKEN", None)

@@ -36,6 +36,8 @@ A valid local experiment must:
 5. restore the local fork so production stays on the published baseline
 6. open the enhancement issue with the data, not with the forked code
 
+For the canonical scenario — bulk-commenting on tasks in `waiting-for-response` status — the experiment should verify the proposed command against the mock server and, if available, the staging API, and include the full before/after timing from `tests/benchmark_bulk.py`.
+
 The local experiment is evidence, not an unofficial rollout path.
 
 ## Benchmark CI workflow

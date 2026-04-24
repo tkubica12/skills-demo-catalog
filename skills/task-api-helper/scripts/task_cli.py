@@ -17,7 +17,10 @@ DEFAULT_TIMEOUT_SECONDS = 30
 
 def build_parser() -> argparse.ArgumentParser:
     shared = argparse.ArgumentParser(add_help=False)
-    shared.add_argument("--base-url", help="Override TASK_API_BASE_URL for this command.")
+    shared.add_argument(
+        "--api-url",
+        help="Override TASK_API_URL for this command.",
+    )
     shared.add_argument("--token", help="Override TASK_API_TOKEN for this command.")
 
     parser = argparse.ArgumentParser(
@@ -32,16 +35,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     list_parser.add_argument(
         "--status",
-        choices=["open", "closed", "all"],
-        default="open",
-        help="Filter tasks by status (default: open).",
-    )
-    list_parser.add_argument("--project", help="Filter tasks by project identifier.")
-    list_parser.add_argument(
-        "--format",
-        choices=["json", "ids"],
-        default="json",
-        help="Output full JSON or just task IDs.",
+        default=None,
+        help="Filter tasks by status, for example waiting-for-response.",
     )
     list_parser.set_defaults(handler=handle_list_tasks)
 
@@ -59,20 +54,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Append a comment to a task.",
     )
     comment_parser.add_argument("task_id", help="Task identifier to update.")
-    comment_parser.add_argument(
-        "--message",
-        required=True,
-        help="Comment text to append to the task.",
-    )
+    comment_parser.add_argument("text", help="Comment text to append to the task.")
     comment_parser.set_defaults(handler=handle_add_comment)
 
     return parser
 
 
 def resolve_base_url(args: argparse.Namespace) -> str:
-    base_url = (getattr(args, "base_url", None) or os.getenv("TASK_API_BASE_URL", "")).strip()
+    base_url = (getattr(args, "api_url", None) or os.getenv("TASK_API_URL", "")).strip()
     if not base_url:
-        raise ValueError("TASK_API_BASE_URL is not set. Pass --base-url or export TASK_API_BASE_URL.")
+        raise ValueError("TASK_API_URL is not set. Pass --api-url or export TASK_API_URL.")
     return base_url.rstrip("/")
 
 
@@ -137,31 +128,10 @@ def request_json(
 
 
 def handle_list_tasks(args: argparse.Namespace) -> int:
-    response = request_json(
-        args,
-        "GET",
-        "/tasks",
-        query={
-            "status": args.status,
-            "project": args.project,
-            "format": args.format if args.format == "ids" else None,
-        },
-    )
-    if args.format == "ids":
-        if isinstance(response, list):
-            for item in response:
-                if isinstance(item, dict):
-                    print(item.get("id", ""))
-                else:
-                    print(item)
-            return 0
-        if isinstance(response, dict) and isinstance(response.get("ids"), list):
-            for task_id in response["ids"]:
-                print(task_id)
-            return 0
-        print("Unexpected response for --format ids", file=sys.stderr)
-        return 1
-
+    query: dict[str, Any] = {}
+    if args.status is not None:
+        query["status"] = args.status
+    response = request_json(args, "GET", "/tasks", query=query or None)
     pretty_print(response)
     return 0
 
@@ -177,7 +147,7 @@ def handle_add_comment(args: argparse.Namespace) -> int:
         args,
         "POST",
         f"/tasks/{parse.quote(args.task_id)}/comments",
-        payload={"message": args.message},
+        payload={"text": args.text},
     )
     pretty_print(response)
     return 0

@@ -18,7 +18,7 @@ CLI_PATH = (
 
 def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
-    env["TASK_API_BASE_URL"] = os.environ["TASK_API_BASE_URL"]
+    env["TASK_API_URL"] = os.environ["TASK_API_URL"]
     return subprocess.run(
         [sys.executable, str(CLI_PATH), *args],
         capture_output=True,
@@ -36,6 +36,14 @@ def test_list_tasks_returns_json() -> None:
     assert len(payload) >= 1
 
 
+def test_list_tasks_status_filter() -> None:
+    result = run_cli("list-tasks", "--status", "waiting-for-response")
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert isinstance(payload, list)
+    assert all(t["status"] == "waiting-for-response" for t in payload)
+
+
 def test_get_task_returns_task() -> None:
     result = run_cli("get-task", "task-1")
     assert result.returncode == 0, result.stderr
@@ -45,7 +53,7 @@ def test_get_task_returns_task() -> None:
 
 
 def test_add_comment_succeeds() -> None:
-    result = run_cli("add-comment", "task-1", "--message", "hello")
+    result = run_cli("add-comment", "task-1", "hello")
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["ok"] is True

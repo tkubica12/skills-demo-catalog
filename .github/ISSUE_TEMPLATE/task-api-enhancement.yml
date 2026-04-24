@@ -25,8 +25,9 @@ body:
       label: Painful workflow
       description: Describe the current manual workaround and why it hurts.
       placeholder: |
-        Today we loop over every open task and run add-comment once per task.
-        This adds several seconds to CI and is brittle when a single request fails.
+        Today we list tasks with --status waiting-for-response, then loop over every
+        result and call add-comment once per task. This adds several seconds to CI and
+        is brittle when a single request fails mid-loop.
     validations:
       required: true
 
@@ -34,9 +35,15 @@ body:
     id: local-experiment-summary
     attributes:
       label: Local experiment summary
-      description: What did you implement locally to prove the idea works?
+      description: |
+        What did you implement locally to prove the idea works?
+        Include the exact command you tested, the API request shape, and the observed behavior.
+        Do NOT include the forked code — only the evidence.
       placeholder: |
-        I forked task_cli.py locally, added a bulk-add-comment command, and validated it against the mock server plus our staging API.
+        I forked task_cli.py locally and added a bulk-add-comment command that sends
+        a single POST /tasks/bulk-comment with {"task_ids": [...], "text": "..."}.
+        Tested against the mock server and our staging API — all tasks updated in one call.
+        Command tested: python task_cli.py bulk-add-comment --status waiting-for-response --comment "Reminder: please respond"
     validations:
       required: true
 
@@ -44,21 +51,20 @@ body:
     id: benchmark-results
     attributes:
       label: Before/After benchmark results
-      description: Include timing data from the local experiment.
+      description: Include timing data from the local experiment, ideally from tests/benchmark_bulk.py.
       placeholder: |
-        Baseline and experiment timings, for example from tests/benchmark_bulk.py:
-        - Baseline loop: 1.20s
-        - Experimental bulk call: 0.10s
-        - Speedup: 12.00x
+        Baseline loop (add-comment per task): 1.20s for 10 tasks
+        Simulated bulk call: 0.10s for 10 tasks
+        Speedup: 12.00x
     validations:
       required: true
 
   - type: input
     id: proposed-command
     attributes:
-      label: Proposed new CLI command
-      description: Provide the exact command syntax you want to standardize.
-      placeholder: python task_cli.py bulk-add-comment --project PROJ --message "Sprint closed"
+      label: Proposed new CLI command — exact syntax
+      description: Provide the exact command syntax you want standardized in the catalog.
+      placeholder: "python task_cli.py bulk-add-comment --status waiting-for-response --comment \"Reminder: please respond\""
     validations:
       required: true
 

@@ -1,6 +1,6 @@
 ---
 name: task-api-helper
-description: 'Helper skill for teams using the shared Task API REST service and its task_cli.py wrapper. Use when the user needs to interact with project tasks: list tasks, get a task, add comments, or investigate missing bulk operations. The skill knows the API contract, CLI command set, and the improvement process for proposing new CLI commands upstream. Supports: list-tasks, get-task, add-comment. Does NOT support bulk-add-comment in the baseline — consumers who need that capability should follow the improvement process.'
+description: 'Helper skill for teams using the shared Task API REST service and its task_cli.py wrapper. Use when the user needs to interact with project tasks: list tasks (optionally filtering by status such as waiting-for-response), get a task, add comments, or investigate missing bulk operations. The skill knows the API contract, CLI command set, and the improvement process for proposing new CLI commands upstream. Supports: list-tasks, get-task, add-comment. Does NOT support bulk-add-comment in the baseline — consumers who need that capability should follow the improvement process.'
 license: MIT
 allowed-tools: Bash,Python
 ---
@@ -22,7 +22,7 @@ This skill helps you work with the **Task API** — a shared REST service for pr
 
 ```bash
 # Set the API base URL (required)
-export TASK_API_BASE_URL="https://tasks.internal.example.com"
+export TASK_API_URL="https://tasks.internal.example.com"
 
 # Optional: authentication token
 export TASK_API_TOKEN="<your-token>"
@@ -35,15 +35,15 @@ export TASK_API_TOKEN="<your-token>"
 ### list-tasks
 
 ```bash
-python task_cli.py list-tasks [--status open|closed|all] [--project PROJECT_ID]
+python task_cli.py list-tasks [--status <status>] [--api-url <url>]
 ```
 
-Lists tasks. Defaults to `status=open`.
+Lists all tasks. Use `--status` to filter by any status value the API supports, for example `waiting-for-response` or `resolved`. Omit `--status` to return all tasks.
 
 ### get-task
 
 ```bash
-python task_cli.py get-task TASK_ID
+python task_cli.py get-task TASK_ID [--api-url <url>]
 ```
 
 Fetches a single task by ID including its comment thread.
@@ -51,10 +51,10 @@ Fetches a single task by ID including its comment thread.
 ### add-comment
 
 ```bash
-python task_cli.py add-comment TASK_ID --message "Your comment"
+python task_cli.py add-comment TASK_ID "Your comment text" [--api-url <url>]
 ```
 
-Appends a comment to a single task.
+Appends a comment to a single task. The comment text is a positional argument.
 
 ---
 
@@ -63,8 +63,8 @@ Appends a comment to a single task.
 The baseline CLI does **not** support `bulk-add-comment`. Teams that need to annotate many tasks at once currently work around this with a shell loop:
 
 ```bash
-for id in $(python task_cli.py list-tasks --status open --project PROJ --format ids); do
-  python task_cli.py add-comment "$id" --message "Sprint closed — see board for details"
+for id in $(python task_cli.py list-tasks --status waiting-for-response | python -c "import sys,json; [print(t['id']) for t in json.load(sys.stdin)]"); do
+  python task_cli.py add-comment "$id" "Reminder: please respond so we can close this task"
 done
 ```
 
@@ -76,12 +76,12 @@ This is slow (one HTTP round-trip per task) and brittle in CI. If your team has 
 
 ```bash
 # Confirm the API is reachable
-curl -s "$TASK_API_BASE_URL/health"
+curl -s "$TASK_API_URL/health"
 
-# List open tasks for a project
-python task_cli.py list-tasks --project MY_PROJECT
+# List tasks waiting for a response
+python task_cli.py list-tasks --status waiting-for-response
 
-# Verify CLI is functional (uses mock server if TASK_API_BASE_URL not set)
+# Verify CLI is functional
 python task_cli.py --help
 ```
 

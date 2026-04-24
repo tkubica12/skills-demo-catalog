@@ -13,33 +13,30 @@ from urllib.parse import parse_qs, urlparse
 TASKS = [
     {
         "id": "task-1",
-        "title": "Finalize sprint board",
-        "status": "open",
-        "project": "PROJ",
+        "title": "Waiting on customer confirmation",
+        "status": "waiting-for-response",
     },
     {
         "id": "task-2",
-        "title": "Prepare release notes",
-        "status": "open",
-        "project": "PROJ",
+        "title": "Pending vendor reply for Q3 renewal",
+        "status": "waiting-for-response",
     },
     {
         "id": "task-3",
-        "title": "Archive completed work",
-        "status": "closed",
-        "project": "OPS",
+        "title": "Archive completed onboarding",
+        "status": "resolved",
     },
 ]
 
 COMMENTS = {
     "task-1": [
-        {"id": "c-1001", "message": "Board moved to ready-for-review", "author": "release-bot"}
+        {"id": "c-1001", "text": "Initial message sent to customer", "author": "support-bot"}
     ],
     "task-2": [
-        {"id": "c-1002", "message": "Draft release notes ready", "author": "docs-bot"}
+        {"id": "c-1002", "text": "Renewal quote sent to vendor", "author": "renewal-bot"}
     ],
     "task-3": [
-        {"id": "c-1003", "message": "Completed during last sprint", "author": "ops-bot"}
+        {"id": "c-1003", "text": "Onboarding completed and archived", "author": "ops-bot"}
     ],
 }
 
@@ -78,20 +75,13 @@ class TaskApiHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/tasks":
             query = parse_qs(parsed.query)
-            status = query.get("status", ["open"])[0]
-            project = query.get("project", [None])[0]
-            response_format = query.get("format", ["json"])[0]
+            status = query.get("status", [None])[0]
 
             tasks = list(self.server.tasks.values())
-            if status != "all":
+            if status is not None:
                 tasks = [task for task in tasks if task["status"] == status]
-            if project:
-                tasks = [task for task in tasks if task["project"] == project]
 
-            if response_format == "ids":
-                self._send_json(200, [task["id"] for task in tasks])
-            else:
-                self._send_json(200, tasks)
+            self._send_json(200, tasks)
             return
 
         if parsed.path.startswith("/tasks/"):
@@ -132,14 +122,14 @@ class TaskApiHandler(BaseHTTPRequestHandler):
                 return
 
             payload = self._read_json()
-            message = str(payload.get("message", "")).strip()
-            if not message:
-                self._send_json(400, {"error": "message is required"})
+            text = str(payload.get("text", "")).strip()
+            if not text:
+                self._send_json(400, {"error": "text is required"})
                 return
 
             comment_id = f"c-{uuid.uuid4().hex[:8]}"
             self.server.comments.setdefault(task_id, []).append(
-                {"id": comment_id, "message": message, "author": "task-cli"}
+                {"id": comment_id, "text": text, "author": "task-cli"}
             )
             self._send_json(200, {"ok": True, "comment_id": comment_id})
             return

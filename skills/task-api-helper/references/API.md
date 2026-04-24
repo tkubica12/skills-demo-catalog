@@ -6,14 +6,14 @@ This document describes the baseline Task API contract used by `skills/task-api-
 
 Set the API root in one of two ways:
 
-- environment variable: `TASK_API_BASE_URL`
-- command-line override: `python task_cli.py <command> --base-url https://tasks.internal.example.com`
+- environment variable: `TASK_API_URL`
+- command-line override: `python task_cli.py <command> --api-url https://tasks.internal.example.com`
 
 Example:
 
 ```bash
-export TASK_API_BASE_URL="https://tasks.internal.example.com"
-python task_cli.py list-tasks --status open --project PAYMENTS
+export TASK_API_URL="https://tasks.internal.example.com"
+python task_cli.py list-tasks --status waiting-for-response
 ```
 
 ## Authentication
@@ -38,7 +38,7 @@ Unauthenticated requests may still work in lower environments if the service is 
 Basic liveness probe.
 
 ```bash
-curl -s "$TASK_API_BASE_URL/health"
+curl -s "$TASK_API_URL/health"
 ```
 
 Response:
@@ -51,19 +51,17 @@ Response:
 
 ### GET /tasks
 
-Returns tasks visible to the caller.
+Returns tasks visible to the caller. Optionally filter by status.
 
 Query parameters:
 
-- `status`: `open`, `closed`, or `all`
-- `project`: project identifier such as `PAYMENTS`
-- `format`: optional response shape override; `ids` returns only task IDs
+- `status`: any status string the API recognizes, for example `waiting-for-response` or `resolved`. Omit to return all tasks.
 
 Example request:
 
 ```bash
 curl -s -H "Authorization: Bearer $TASK_API_TOKEN" \
-  "$TASK_API_BASE_URL/tasks?status=open&project=PAYMENTS"
+  "$TASK_API_URL/tasks?status=waiting-for-response"
 ```
 
 Example response:
@@ -72,25 +70,14 @@ Example response:
 [
   {
     "id": "task-1",
-    "title": "Finalize sprint board",
-    "status": "open",
-    "project": "PAYMENTS"
+    "title": "Waiting on customer confirmation",
+    "status": "waiting-for-response"
   },
   {
     "id": "task-2",
-    "title": "Publish release notes",
-    "status": "closed",
-    "project": "PAYMENTS"
+    "title": "Pending vendor reply for Q3 renewal",
+    "status": "waiting-for-response"
   }
-]
-```
-
-When `format=ids`:
-
-```json
-[
-  "task-1",
-  "task-2"
 ]
 ```
 
@@ -102,7 +89,7 @@ Example request:
 
 ```bash
 curl -s -H "Authorization: Bearer $TASK_API_TOKEN" \
-  "$TASK_API_BASE_URL/tasks/task-1"
+  "$TASK_API_URL/tasks/task-1"
 ```
 
 Example response:
@@ -110,14 +97,13 @@ Example response:
 ```json
 {
   "id": "task-1",
-  "title": "Finalize sprint board",
-  "status": "open",
-  "project": "PAYMENTS",
+  "title": "Waiting on customer confirmation",
+  "status": "waiting-for-response",
   "comments": [
     {
       "id": "c-1001",
-      "message": "Board moved to ready-for-review",
-      "author": "release-bot"
+      "text": "Initial message sent to customer",
+      "author": "support-bot"
     }
   ]
 }
@@ -135,7 +121,7 @@ Content-Type: application/json
 Authorization: Bearer <token>
 
 {
-  "message": "Sprint closed — see board for details"
+  "text": "Reminder: please respond so we can close this task"
 }
 ```
 
@@ -158,8 +144,8 @@ Proposed request shape:
 
 ```json
 {
-  "task_ids": ["task-1", "task-2", "task-3"],
-  "message": "Sprint closed — see board for details"
+  "task_ids": ["task-1", "task-2"],
+  "text": "Reminder: please respond so we can close this task"
 }
 ```
 

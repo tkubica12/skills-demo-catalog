@@ -1,5 +1,8 @@
 name: Auto-assign to Copilot
 
+# Triggers when a maintainer adds the 'accepted' label to an issue, meaning the
+# enhancement has been triaged and approved for implementation. This prevents
+# auto-assignment of every filed issue before review.
 on:
   issues:
     types:
@@ -7,30 +10,43 @@ on:
 
 jobs:
   assign:
-    if: github.event.label.name == 'task-api-enhancement'
+    # Only run when the 'accepted' label is applied (post-triage approval).
+    if: github.event.label.name == 'accepted'
     runs-on: ubuntu-latest
     permissions:
       issues: write
       contents: read
     env:
       COPILOT_TOKEN: ${{ secrets.COPILOT_TOKEN }}
+      # The GitHub login of the Copilot coding agent account to assign.
+      # In most organizations this is 'Copilot' (the GitHub Copilot bot user).
       COPILOT_ASSIGNEE_LOGIN: Copilot
 
     steps:
-      - name: Skip when token missing
+      - name: Skip when PAT secret is absent
         if: env.COPILOT_TOKEN == ''
         run: |
-          echo "Skipping Copilot auto-assignment."
-          echo "Add a COPILOT_TOKEN secret with assignees:write scope to enable this workflow."
+          echo "::notice::Skipping Copilot auto-assignment: COPILOT_TOKEN secret is not configured."
+          echo "To enable this step, add a COPILOT_TOKEN repository secret containing a personal"
+          echo "access token (classic) with 'repo' scope belonging to an account with write access."
+          echo "The Copilot coding agent must also be enabled for this organization and repository."
 
-      - name: Assign issue to Copilot coding agent
+      - name: Assign issue to Copilot coding agent via GraphQL
         if: env.COPILOT_TOKEN != ''
         uses: actions/github-script@v7
         with:
+          # Use the PAT rather than GITHUB_TOKEN because assigning to the Copilot
+          # bot user requires a token with sufficient scope and, in preview, the
+          # Copilot coding agent may only activate when assigned by a qualifying PAT.
           github-token: ${{ env.COPILOT_TOKEN }}
           script: |
-            // Assign the issue to the Copilot coding agent when the task-api-enhancement label is applied.
-            // This requires a COPILOT_TOKEN secret with assignees:write scope.
+            // Resolve the Copilot bot user's node ID via GraphQL, then assign the issue.
+            //
+            // Limitations (as of Copilot coding agent preview):
+            //   - The COPILOT_TOKEN must be a classic PAT with 'repo' scope.
+            //   - Copilot coding agent must be enabled for the organization.
+            //   - The repository must be in the agent's allowed scope.
+            //   - If the user lookup returns null the workflow fails loudly rather than silently.
             const login = process.env.COPILOT_ASSIGNEE_LOGIN || "Copilot";
             const assignableId = context.payload.issue.node_id;
 
@@ -45,7 +61,10 @@ jobs:
             );
 
             if (!lookup.user) {
-              core.setFailed(`Could not resolve GitHub user '${login}' for assignment.`);
+              core.setFailed(
+                `Could not resolve GitHub user '${login}'. ` +
+                `Verify COPILOT_ASSIGNEE_LOGIN is correct and the account exists.`
+              );
               return;
             }
 
