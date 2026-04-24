@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import argparse
+import importlib.util
+import io
 import json
 import os
+import ssl
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 
 CLI_PATH = (
@@ -15,6 +21,10 @@ CLI_PATH = (
     / "task_cli.py"
 )
 SKILL_ENV_PATH = CLI_PATH.parent.parent / ".env"
+CLI_SPEC = importlib.util.spec_from_file_location("task_cli_module", CLI_PATH)
+assert CLI_SPEC is not None and CLI_SPEC.loader is not None
+task_cli = importlib.util.module_from_spec(CLI_SPEC)
+CLI_SPEC.loader.exec_module(task_cli)
 
 
 def run_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -84,6 +94,64 @@ def test_cli_reads_api_url_from_skill_dotenv() -> None:
             SKILL_ENV_PATH.unlink(missing_ok=True)
         else:
             SKILL_ENV_PATH.write_text(original_dotenv, encoding="utf-8")
+
+
+def test_request_json_retries_transient_transport_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts = {"count": 0}
+
+    class FakeResponse:
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
+            return False
+
+        def read(self) -> bytes:
+            return b'{"ok": true}'
+
+    def fake_urlopen(*args: object, **kwargs: object) -> FakeResponse:
+        attempts["count"] += 1
+        if attempts["count"] < 3:
+            raise task_cli.error.URLError(
+                ssl.SSLEOFError(
+                    8,
+                    "[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol",
+                )
+            )
+        return FakeResponse()
+
+    monkeypatch.setattr(task_cli.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(task_cli.time, "sleep", lambda seconds: None)
+
+    args = argparse.Namespace(api_url="https://example.test", token=None)
+    payload = task_cli.request_json(args, "GET", "/tasks")
+
+    assert payload == {"ok": True}
+    assert attempts["count"] == 3
+
+
+def test_request_json_does_not_retry_http_429(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    attempts = {"count": 0}
+
+    def fake_urlopen(*args: object, **kwargs: object) -> object:
+        attempts["count"] += 1
+        raise task_cli.error.HTTPError(
+            url="https://example.test/tasks",
+            code=429,
+            msg="Too Many Requests",
+            hdrs=None,
+            fp=io.BytesIO(b'{"detail": "Rate limit exceeded. Retry the request."}'),
+        )
+
+    monkeypatch.setattr(task_cli.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(task_cli.time, "sleep", lambda seconds: None)
+
+    args = argparse.Namespace(api_url="https://example.test", token=None)
+    with pytest.raises(SystemExit):
+        task_cli.request_json(args, "GET", "/tasks")
+
+    assert attempts["count"] == 1
+    assert "HTTP 429" in capsys.readouterr().err
 
 
 def test_bulk_add_comment_not_available() -> None:

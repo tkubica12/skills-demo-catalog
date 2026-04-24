@@ -6,13 +6,17 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import socket
+import ssl
 import sys
+import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
 
 DEFAULT_TIMEOUT_SECONDS = 30
+TRANSIENT_RETRY_DELAYS_SECONDS = (0.25, 0.5, 1.0)
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SKILL_DOTENV_PATH = SKILL_ROOT / ".env"
 
@@ -117,6 +121,32 @@ def decode_response(response: Any) -> Any:
     return json.loads(body)
 
 
+def is_transient_transport_error(exc: error.URLError) -> bool:
+    reason = exc.reason
+    if isinstance(
+        reason,
+        (
+            ssl.SSLError,
+            socket.timeout,
+            TimeoutError,
+            ConnectionResetError,
+            ConnectionAbortedError,
+        ),
+    ):
+        return True
+
+    message = str(reason).lower()
+    return any(
+        fragment in message
+        for fragment in (
+            "unexpected eof while reading",
+            "eof occurred in violation of protocol",
+            "connection reset",
+            "timed out",
+        )
+    )
+
+
 def request_json(
     args: argparse.Namespace,
     method: str,
@@ -145,21 +175,36 @@ def request_json(
         data = json.dumps(payload).encode("utf-8")
 
     http_request = request.Request(url, data=data, headers=headers, method=method)
-    try:
-        with request.urlopen(http_request, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
-            return decode_response(response)
-    except error.HTTPError as exc:
-        message = exc.read().decode("utf-8", errors="replace")
+    last_url_error: error.URLError | None = None
+    for attempt_index in range(len(TRANSIENT_RETRY_DELAYS_SECONDS) + 1):
         try:
-            parsed_body = json.loads(message) if message else {"error": exc.reason}
-            formatted_body = json.dumps(parsed_body, indent=2, sort_keys=True)
-        except json.JSONDecodeError:
-            formatted_body = message or str(exc.reason)
-        print(f"HTTP {exc.code}: {formatted_body}", file=sys.stderr)
-        raise SystemExit(1) from exc
-    except error.URLError as exc:
-        print(f"Request failed: {exc.reason}", file=sys.stderr)
-        raise SystemExit(1) from exc
+            with request.urlopen(http_request, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
+                return decode_response(response)
+        except error.HTTPError as exc:
+            message = exc.read().decode("utf-8", errors="replace")
+            try:
+                parsed_body = json.loads(message) if message else {"error": exc.reason}
+                formatted_body = json.dumps(parsed_body, indent=2, sort_keys=True)
+            except json.JSONDecodeError:
+                formatted_body = message or str(exc.reason)
+            print(f"HTTP {exc.code}: {formatted_body}", file=sys.stderr)
+            raise SystemExit(1) from exc
+        except error.URLError as exc:
+            last_url_error = exc
+            if (
+                attempt_index < len(TRANSIENT_RETRY_DELAYS_SECONDS)
+                and is_transient_transport_error(exc)
+            ):
+                time.sleep(TRANSIENT_RETRY_DELAYS_SECONDS[attempt_index])
+                continue
+            break
+
+    message = f"Request failed: {last_url_error.reason}" if last_url_error else "Request failed."
+    if last_url_error and is_transient_transport_error(last_url_error):
+        attempts = len(TRANSIENT_RETRY_DELAYS_SECONDS) + 1
+        message = f"Request failed after {attempts} attempts: {last_url_error.reason}"
+    print(message, file=sys.stderr)
+    raise SystemExit(1) from last_url_error
 
 
 def handle_list_tasks(args: argparse.Namespace) -> int:
