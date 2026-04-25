@@ -1,0 +1,68 @@
+{
+  "id": "bulk-add-comment-retry",
+  "title": "Bulk add comment with retry",
+  "hypothesis": "A shared bulk comment workflow should reduce repeated task updates and absorb transient 429s without forcing the agent to improvise local loops.",
+  "prompt": "Use the installed task-api-helper skill that is already available in this repository. Do not edit files, do not create issues, and do not propose improvements. Add this exact comment to every task waiting for response: \"Benchmark follow-up - please respond.\" Use the shared skill rather than building a local workaround, continue until the workflow succeeds if the API rate-limits you, and stop once every waiting task has the comment. Reply with one short sentence only when finished.",
+  "scenario": {
+    "tasks": [
+      {
+        "id": "task-1",
+        "title": "Waiting on customer confirmation",
+        "status": "waiting-for-response"
+      },
+      {
+        "id": "task-2",
+        "title": "Pending vendor reply for Q3 renewal",
+        "status": "waiting-for-response"
+      },
+      {
+        "id": "task-3",
+        "title": "Archive completed onboarding",
+        "status": "resolved"
+      }
+    ],
+    "comments": {
+      "task-1": [
+        {
+          "id": "c-1001",
+          "text": "Initial message sent to customer",
+          "author": "support-bot"
+        }
+      ],
+      "task-2": [
+        {
+          "id": "c-1002",
+          "text": "Renewal quote sent to vendor",
+          "author": "renewal-bot"
+        }
+      ],
+      "task-3": [
+        {
+          "id": "c-1003",
+          "text": "Onboarding completed and archived",
+          "author": "ops-bot"
+        }
+      ]
+    },
+    "rate_limit_budget": {
+      "POST /tasks/task-1/comments": 1,
+      "POST /tasks/task-2/comments": 1,
+      "POST /tasks/bulk-comment": 1
+    }
+  },
+  "assertions": {
+    "required_comments": [
+      {
+        "text": "Benchmark follow-up - please respond.",
+        "task_status": "waiting-for-response",
+        "min_count": 2
+      }
+    ]
+  },
+  "comparison_focus": [
+    "duration_seconds",
+    "input_tokens",
+    "llm_calls",
+    "task_api_requests"
+  ]
+}

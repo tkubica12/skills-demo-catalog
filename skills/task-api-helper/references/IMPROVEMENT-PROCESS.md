@@ -19,9 +19,9 @@ The `task-api-helper` skill is centrally maintained so every consumer gets the s
 5. **Triage**  
    Catalog maintainers review the problem statement, the measured pain, the proposed command syntax, and whether the shared API or CLI contract should change.
 6. **Copilot or cloud agent implementation**  
-   Once accepted, Copilot or the configured cloud agent implements the change in the central catalog.
+   Once accepted, Copilot or the configured cloud agent implements the change in the central catalog and authors a benchmark spec describing the workflow benefit to measure.
 7. **Pull request**  
-   The PR updates `task_cli.py`, `API.md`, `SKILL.md`, tests, and benchmark evidence.
+   The PR updates `task_cli.py`, `API.md`, `SKILL.md`, tests, the benchmark spec, and benchmark evidence.
 8. **Catalog release**  
    After merge, the catalog is tagged and released.
 9. **Consumer update**  
@@ -61,26 +61,35 @@ The local experiment is evidence, not an unofficial rollout path.
 
 ## Catalog-side benchmark CI workflow
 
-`.github/workflows/ci-benchmark.yml` now has two benchmark layers:
+`.github/workflows/ci-benchmark.yml` runs a single **agent benchmark**:
 
-1. **Low-level workflow benchmark**  
-   Starts `tests/mock_api_server.py`, runs `pytest tests/benchmark_bulk.py -v --tb=short`, and gives a fast deterministic signal about the raw workflow delta between repeated single-task calls and the simulated bulk endpoint.
-2. **Agent benchmark**  
-   Runs `benchmarks/agent_benchmark.py`, which compares the installed skill from `main` with the installed skill from the current patch by running the same Copilot task against both in isolated workspaces.
+1. Copilot implementing the enhancement adds a benchmark spec file under `benchmarks/specs/task-api-helper/`
+2. `benchmarks/agent_benchmark.py` loads that spec
+3. the runner seeds a deterministic Task API scenario from the spec
+4. the same goal-level Copilot task is executed against:
+   - the installed skill from `main`
+   - the installed skill from the current patch
+5. CI publishes the before/after summary back to the PR
 
-The agent benchmark is the stronger evidence for central skill evolution because
-it measures the real agent workflow, not just the HTTP wrapper.
+The important distinction is:
 
-This is catalog-internal validation. Downstream repos are not expected to
-contain these exact benchmark files.
+- the **runner** is generic
+- the **scenario** is authored per enhancement
+
+That keeps the benchmark honest. The benchmark does not hardcode “bulk comment”
+or any other specific solution in the Python harness. Instead, Copilot must
+state what workflow should improve, and CI measures that claim.
+
+The benchmark spec should remain goal-level rather than command-level. It should
+describe the workflow outcome the agent should achieve, not tell the agent to
+invoke the newly added command by name.
 
 ## Token measurement note
 
-Token measurement is no longer described as a placeholder mode switch. The
-agent benchmark uses GitHub Copilot SDK session events instead:
+The agent benchmark uses GitHub Copilot SDK session events instead:
 
 - `assistant.usage` for input/output token counts and per-call API duration
 - `session.shutdown` for total premium requests and total API duration
 
 If the repository does not have `COPILOT_GITHUB_TOKEN` configured for CI, the
-agent benchmark is skipped cleanly and the low-level benchmark still runs.
+agent benchmark is skipped cleanly.

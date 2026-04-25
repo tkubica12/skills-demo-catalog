@@ -24,68 +24,26 @@ from copilot.generated.session_events import SessionEventType
 from copilot.session import PermissionHandler
 
 
-BENCHMARK_COMMENT = "Benchmark follow-up - please respond."
-BENCHMARK_PROMPT = """
-Use the installed task-api-helper skill that is already available in this repository.
-Do not edit files, do not create issues, and do not propose improvements.
-Your goal is to add this exact comment to every task waiting for response:
+@dataclass(frozen=True)
+class RequiredCommentAssertion:
+    text: str
+    task_ids: tuple[str, ...] = ()
+    task_status: str | None = None
+    min_count: int | None = None
 
-"Benchmark follow-up - please respond."
 
-Important constraints:
-- use the installed shared skill instead of building a local workaround
-- if the API returns a transient rate limit, continue until the workflow succeeds
-- stop once every waiting task has the comment
-- when you are finished, reply with one short sentence only
-""".strip()
-
-SEED_TASKS = [
-    {
-        "id": "task-1",
-        "title": "Waiting on customer confirmation",
-        "status": "waiting-for-response",
-    },
-    {
-        "id": "task-2",
-        "title": "Pending vendor reply for Q3 renewal",
-        "status": "waiting-for-response",
-    },
-    {
-        "id": "task-3",
-        "title": "Archive completed onboarding",
-        "status": "resolved",
-    },
-]
-
-SEED_COMMENTS = {
-    "task-1": [
-        {
-            "id": "c-1001",
-            "text": "Initial message sent to customer",
-            "author": "support-bot",
-        }
-    ],
-    "task-2": [
-        {
-            "id": "c-1002",
-            "text": "Renewal quote sent to vendor",
-            "author": "renewal-bot",
-        }
-    ],
-    "task-3": [
-        {
-            "id": "c-1003",
-            "text": "Onboarding completed and archived",
-            "author": "ops-bot",
-        }
-    ],
-}
-
-RATE_LIMIT_BUDGET = {
-    ("POST", "/tasks/task-1/comments"): 1,
-    ("POST", "/tasks/task-2/comments"): 1,
-    ("POST", "/tasks/bulk-comment"): 1,
-}
+@dataclass(frozen=True)
+class BenchmarkSpec:
+    id: str
+    title: str
+    hypothesis: str
+    prompt: str
+    tasks: tuple[dict[str, Any], ...]
+    comments: dict[str, tuple[dict[str, Any], ...]]
+    rate_limit_budget: dict[tuple[str, str], int]
+    required_comments: tuple[RequiredCommentAssertion, ...]
+    comparison_focus: tuple[str, ...] = ()
+    spec_path: str | None = None
 
 
 @dataclass
@@ -112,7 +70,76 @@ class RunResult:
     tool_counts: dict[str, int]
     task_api_requests: dict[str, int]
     rate_limit_responses: int
+    assertion_results: list[dict[str, Any]]
     final_message: str | None = None
+
+
+def _load_required_comments(raw_items: list[dict[str, Any]]) -> tuple[RequiredCommentAssertion, ...]:
+    assertions: list[RequiredCommentAssertion] = []
+    for raw in raw_items:
+        if not raw.get("text"):
+            raise ValueError("Each required comment assertion must include non-empty 'text'.")
+        task_ids = tuple(str(task_id) for task_id in raw.get("task_ids", []))
+        task_status = raw.get("task_status")
+        if not task_ids and not task_status:
+            raise ValueError(
+                "Each required comment assertion must target either 'task_ids' or 'task_status'."
+            )
+        min_count = raw.get("min_count")
+        assertions.append(
+            RequiredCommentAssertion(
+                text=str(raw["text"]),
+                task_ids=task_ids,
+                task_status=str(task_status) if task_status is not None else None,
+                min_count=int(min_count) if min_count is not None else None,
+            )
+        )
+    if not assertions:
+        raise ValueError("Benchmark spec must define at least one required comment assertion.")
+    return tuple(assertions)
+
+
+def load_spec(spec_path: Path) -> BenchmarkSpec:
+    raw = json.loads(spec_path.read_text(encoding="utf-8"))
+    scenario = raw.get("scenario") or {}
+    assertions = raw.get("assertions") or {}
+    if not raw.get("id"):
+        raise ValueError("Benchmark spec must include 'id'.")
+    if not raw.get("title"):
+        raise ValueError("Benchmark spec must include 'title'.")
+    if not raw.get("hypothesis"):
+        raise ValueError("Benchmark spec must include 'hypothesis'.")
+    if not raw.get("prompt"):
+        raise ValueError("Benchmark spec must include 'prompt'.")
+    task_items = scenario.get("tasks") or []
+    if not task_items:
+        raise ValueError("Benchmark spec scenario must include at least one task.")
+    tasks = tuple(dict(task) for task in task_items)
+    comments = {
+        str(task_id): tuple(dict(comment) for comment in comment_items)
+        for task_id, comment_items in (scenario.get("comments") or {}).items()
+    }
+    rate_limit_budget: dict[tuple[str, str], int] = {}
+    for key, value in (scenario.get("rate_limit_budget") or {}).items():
+        try:
+            method, request_path = str(key).split(" ", 1)
+        except ValueError as exc:
+            raise ValueError(
+                "rate_limit_budget keys must use the form 'METHOD /path'."
+            ) from exc
+        rate_limit_budget[(method.upper(), request_path)] = int(value)
+    return BenchmarkSpec(
+        id=str(raw["id"]),
+        title=str(raw["title"]),
+        hypothesis=str(raw["hypothesis"]),
+        prompt=str(raw["prompt"]).strip(),
+        tasks=tasks,
+        comments=comments,
+        rate_limit_budget=rate_limit_budget,
+        required_comments=_load_required_comments(assertions.get("required_comments") or []),
+        comparison_focus=tuple(str(item) for item in raw.get("comparison_focus", [])),
+        spec_path=str(spec_path),
+    )
 
 
 class BenchmarkTaskApiServer(ThreadingHTTPServer):
@@ -120,12 +147,14 @@ class BenchmarkTaskApiServer(ThreadingHTTPServer):
         self,
         server_address: tuple[str, int],
         handler_class: type[BaseHTTPRequestHandler],
+        spec: BenchmarkSpec,
     ) -> None:
         super().__init__(server_address, handler_class)
-        self.tasks = {task["id"]: dict(task) for task in deepcopy(SEED_TASKS)}
-        self.comments = deepcopy(SEED_COMMENTS)
+        self.spec = spec
+        self.tasks = {str(task["id"]): dict(task) for task in deepcopy(spec.tasks)}
+        self.comments = deepcopy({task_id: list(comment_items) for task_id, comment_items in spec.comments.items()})
         self.request_counts: Counter[str] = Counter()
-        self.rate_limit_budget = Counter(RATE_LIMIT_BUDGET)
+        self.rate_limit_budget = Counter(spec.rate_limit_budget)
         self.rate_limit_responses = 0
 
     def maybe_rate_limit(self, method: str, path: str) -> bool:
@@ -137,11 +166,27 @@ class BenchmarkTaskApiServer(ThreadingHTTPServer):
         self.rate_limit_responses += 1
         return True
 
-    def comment_occurrences(self, text: str) -> int:
+    def matching_task_ids(
+        self,
+        *,
+        task_ids: tuple[str, ...] = (),
+        task_status: str | None = None,
+    ) -> list[str]:
+        if task_ids:
+            return [task_id for task_id in task_ids if task_id in self.tasks]
+        if task_status is not None:
+            return [
+                task_id
+                for task_id, task in self.tasks.items()
+                if str(task.get("status")) == task_status
+            ]
+        return list(self.tasks.keys())
+
+    def count_comment_text_on_tasks(self, text: str, task_ids: list[str]) -> int:
         return sum(
             1
-            for comments in self.comments.values()
-            for comment in comments
+            for task_id in task_ids
+            for comment in self.comments.get(task_id, [])
             if comment["text"] == text
         )
 
@@ -264,8 +309,8 @@ class BenchmarkTaskApiHandler(BaseHTTPRequestHandler):
 
 
 class RunningScenario:
-    def __init__(self) -> None:
-        self.server = BenchmarkTaskApiServer(("127.0.0.1", 0), BenchmarkTaskApiHandler)
+    def __init__(self, spec: BenchmarkSpec) -> None:
+        self.server = BenchmarkTaskApiServer(("127.0.0.1", 0), BenchmarkTaskApiHandler, spec)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
     def __enter__(self) -> tuple[BenchmarkTaskApiServer, str]:
@@ -277,6 +322,38 @@ class RunningScenario:
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=5)
+
+
+def evaluate_required_comments(
+    spec: BenchmarkSpec,
+    server: BenchmarkTaskApiServer,
+) -> tuple[bool, int, list[dict[str, Any]]]:
+    results: list[dict[str, Any]] = []
+    total_matched_comments = 0
+    success = True
+    for assertion in spec.required_comments:
+        matched_task_ids = server.matching_task_ids(
+            task_ids=assertion.task_ids,
+            task_status=assertion.task_status,
+        )
+        matched_count = server.count_comment_text_on_tasks(assertion.text, matched_task_ids)
+        required_count = (
+            assertion.min_count if assertion.min_count is not None else len(matched_task_ids)
+        )
+        assertion_ok = matched_count >= required_count
+        success = success and assertion_ok
+        total_matched_comments += matched_count
+        results.append(
+            {
+                "text": assertion.text,
+                "task_ids": matched_task_ids,
+                "task_status": assertion.task_status,
+                "matched_count": matched_count,
+                "required_count": required_count,
+                "success": assertion_ok,
+            }
+        )
+    return success, total_matched_comments, results
 
 
 def extract_skill_from_git_ref(repo_root: Path, git_ref: str, destination: Path) -> None:
@@ -335,11 +412,11 @@ async def run_agent_scenario(
     workspace_root: Path,
     baseline_ref: str | None,
     model: str,
-    prompt: str,
+    spec: BenchmarkSpec,
     timeout_seconds: int,
     github_token: str | None,
 ) -> RunResult:
-    with RunningScenario() as (server, task_api_url):
+    with RunningScenario(spec) as (server, task_api_url):
         workspace = prepare_workspace(
             repo_root=repo_root,
             destination_root=workspace_root,
@@ -385,12 +462,11 @@ async def run_agent_scenario(
                         usage.premium_requests = int(event.data.total_premium_requests or 0)
 
                 session.on(on_event)
-                await session.send(prompt)
+                await session.send(spec.prompt)
                 await asyncio.wait_for(idle.wait(), timeout=timeout_seconds)
 
         duration_seconds = time.perf_counter() - started
-        updated_count = server.comment_occurrences(BENCHMARK_COMMENT)
-        success = updated_count == 2
+        success, updated_count, assertion_results = evaluate_required_comments(spec, server)
 
         return RunResult(
             name=name,
@@ -405,14 +481,26 @@ async def run_agent_scenario(
             tool_counts=dict(sorted(usage.tool_counts.items())),
             task_api_requests=dict(sorted(server.request_counts.items())),
             rate_limit_responses=server.rate_limit_responses,
+            assertion_results=assertion_results,
             final_message=final_message,
         )
 
 
-def build_report(baseline: RunResult, candidate: RunResult, model: str) -> dict[str, Any]:
+def build_report(
+    baseline: RunResult,
+    candidate: RunResult,
+    model: str,
+    spec: BenchmarkSpec,
+) -> dict[str, Any]:
     return {
         "model": model,
-        "benchmark_comment": BENCHMARK_COMMENT,
+        "spec": {
+            "id": spec.id,
+            "title": spec.title,
+            "hypothesis": spec.hypothesis,
+            "comparison_focus": list(spec.comparison_focus),
+            "path": spec.spec_path,
+        },
         "baseline": asdict(baseline),
         "candidate": asdict(candidate),
         "comparison": {
@@ -431,6 +519,7 @@ def build_report(baseline: RunResult, candidate: RunResult, model: str) -> dict[
 
 
 def build_markdown_summary(report: dict[str, Any]) -> str:
+    spec = report["spec"]
     baseline = report["baseline"]
     candidate = report["candidate"]
     comparison = report["comparison"]
@@ -453,6 +542,8 @@ def build_markdown_summary(report: dict[str, Any]) -> str:
         ),
     ]
     bullets = [
+        f"- Spec: `{spec['title']}` (`{spec['id']}`)",
+        f"- Hypothesis: {spec['hypothesis']}",
         f"- Model: `{report['model']}`",
         f"- Duration delta (candidate - baseline): `{comparison['duration_delta_seconds']}` s",
         f"- Input token delta: `{comparison['input_token_delta']}`",
@@ -461,11 +552,17 @@ def build_markdown_summary(report: dict[str, Any]) -> str:
         f"- Premium request delta: `{comparison['premium_request_delta']}`",
         f"- Task API request delta: `{comparison['request_delta']}`",
     ]
+    if spec["comparison_focus"]:
+        bullets.append(
+            "- Comparison focus: " + ", ".join(f"`{item}`" for item in spec["comparison_focus"])
+        )
     return "\n".join(["## Agent benchmark summary", "", *rows, "", *bullets, ""])
 
 
 async def main_async(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root).resolve()
+    spec_path = Path(args.spec).resolve()
+    spec = load_spec(spec_path)
     workspace_root = Path(args.workspace_root).resolve()
     workspace_root.mkdir(parents=True, exist_ok=True)
     github_token = (
@@ -480,7 +577,7 @@ async def main_async(args: argparse.Namespace) -> int:
         workspace_root=workspace_root,
         baseline_ref=args.baseline_ref,
         model=args.model,
-        prompt=args.prompt,
+        spec=spec,
         timeout_seconds=args.timeout_seconds,
         github_token=github_token,
     )
@@ -490,11 +587,11 @@ async def main_async(args: argparse.Namespace) -> int:
         workspace_root=workspace_root,
         baseline_ref=None,
         model=args.model,
-        prompt=args.prompt,
+        spec=spec,
         timeout_seconds=args.timeout_seconds,
         github_token=github_token,
     )
-    report = build_report(baseline, candidate, args.model)
+    report = build_report(baseline, candidate, args.model, spec)
     markdown = build_markdown_summary(report)
     if args.output_json:
         Path(args.output_json).write_text(json.dumps(report, indent=2), encoding="utf-8")
@@ -512,6 +609,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Repository root containing the task-api-helper skill.",
     )
     parser.add_argument(
+        "--spec",
+        required=True,
+        help="Benchmark spec JSON file describing the scenario and prompt to run.",
+    )
+    parser.add_argument(
         "--workspace-root",
         default=Path(tempfile.gettempdir()) / "task-api-skill-benchmark",
         help="Directory used for temporary benchmark workspaces.",
@@ -525,11 +627,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--model",
         default="gpt-4.1",
         help="Copilot model identifier for both runs.",
-    )
-    parser.add_argument(
-        "--prompt",
-        default=BENCHMARK_PROMPT,
-        help="Prompt used for the benchmark run.",
     )
     parser.add_argument(
         "--timeout-seconds",
