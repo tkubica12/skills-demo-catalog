@@ -69,6 +69,21 @@ python task_cli.py add-comment TASK_ID "Your comment text" [--api-url <url>]
 
 Appends a comment to a single task. The comment text is a positional argument.
 
+### bulk-add-comment
+
+```bash
+python task_cli.py bulk-add-comment --status <status> "Comment text" [--dry-run] [--api-url <url>]
+python task_cli.py bulk-add-comment "Comment text" --task-ids task-1 task-2 task-3 [--dry-run] [--api-url <url>]
+```
+
+Appends the same comment to multiple tasks in a single invocation.
+
+- `--status` fetches all tasks with the given status and comments on each.
+- `--task-ids` accepts an explicit list of one or more task IDs.  When using `--task-ids`, place the comment text before the flag so that argparse can distinguish it from the task ID list.
+- `--dry-run` prints the affected task list without posting any comments.
+- Transient HTTP 429 rate-limit errors are automatically retried with exponential backoff (up to 5 attempts: 2, 4, 8, 16, 32 s).
+- Progress messages are written to stderr; a JSON summary is written to stdout.
+
 ---
 
 ## Workflow evolution
