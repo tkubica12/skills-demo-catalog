@@ -17,6 +17,7 @@ from urllib import error, parse, request
 
 DEFAULT_TIMEOUT_SECONDS = 30
 TRANSIENT_RETRY_DELAYS_SECONDS = (0.25, 0.5, 1.0)
+BULK_COMMENT_RETRY_DELAYS_SECONDS = (2, 4, 8, 16, 32)
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SKILL_DOTENV_PATH = SKILL_ROOT / ".env"
 
@@ -62,6 +63,30 @@ def build_parser() -> argparse.ArgumentParser:
     comment_parser.add_argument("task_id", help="Task identifier to update.")
     comment_parser.add_argument("text", help="Comment text to append to the task.")
     comment_parser.set_defaults(handler=handle_add_comment)
+
+    bulk_parser = subparsers.add_parser(
+        "bulk-add-comment",
+        parents=[shared],
+        help="Append a comment to multiple tasks with automatic 429 retry.",
+    )
+    target_group = bulk_parser.add_mutually_exclusive_group(required=True)
+    target_group.add_argument(
+        "--status",
+        help="Filter tasks by status and comment on all matches.",
+    )
+    target_group.add_argument(
+        "--task-ids",
+        nargs="+",
+        metavar="TASK_ID",
+        help="Explicit list of task IDs to comment on.",
+    )
+    bulk_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview affected tasks without posting.",
+    )
+    bulk_parser.add_argument("text", help="Comment text to append to each task.")
+    bulk_parser.set_defaults(handler=handle_bulk_add_comment)
 
     return parser
 
@@ -147,13 +172,19 @@ def is_transient_transport_error(exc: error.URLError) -> bool:
     )
 
 
-def request_json(
+def _make_http_request(
     args: argparse.Namespace,
     method: str,
     path: str,
     query: dict[str, Any] | None = None,
     payload: dict[str, Any] | None = None,
 ) -> Any:
+    """Execute an HTTP request with transient transport-error retry.
+
+    Raises ``error.HTTPError`` on any HTTP error status so callers can inspect
+    the status code. Use ``request_json`` instead if you want HTTP errors
+    converted to a printed message and ``SystemExit``.
+    """
     base_url = resolve_base_url(args)
     cleaned_query = {
         key: value
@@ -180,15 +211,8 @@ def request_json(
         try:
             with request.urlopen(http_request, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
                 return decode_response(response)
-        except error.HTTPError as exc:
-            message = exc.read().decode("utf-8", errors="replace")
-            try:
-                parsed_body = json.loads(message) if message else {"error": exc.reason}
-                formatted_body = json.dumps(parsed_body, indent=2, sort_keys=True)
-            except json.JSONDecodeError:
-                formatted_body = message or str(exc.reason)
-            print(f"HTTP {exc.code}: {formatted_body}", file=sys.stderr)
-            raise SystemExit(1) from exc
+        except error.HTTPError:
+            raise
         except error.URLError as exc:
             last_url_error = exc
             if (
@@ -205,6 +229,26 @@ def request_json(
         message = f"Request failed after {attempts} attempts: {last_url_error.reason}"
     print(message, file=sys.stderr)
     raise SystemExit(1) from last_url_error
+
+
+def request_json(
+    args: argparse.Namespace,
+    method: str,
+    path: str,
+    query: dict[str, Any] | None = None,
+    payload: dict[str, Any] | None = None,
+) -> Any:
+    try:
+        return _make_http_request(args, method, path, query=query, payload=payload)
+    except error.HTTPError as exc:
+        message = exc.read().decode("utf-8", errors="replace")
+        try:
+            parsed_body = json.loads(message) if message else {"error": exc.reason}
+            formatted_body = json.dumps(parsed_body, indent=2, sort_keys=True)
+        except json.JSONDecodeError:
+            formatted_body = message or str(exc.reason)
+        print(f"HTTP {exc.code}: {formatted_body}", file=sys.stderr)
+        raise SystemExit(1) from exc
 
 
 def handle_list_tasks(args: argparse.Namespace) -> int:
@@ -231,6 +275,68 @@ def handle_add_comment(args: argparse.Namespace) -> int:
     )
     pretty_print(response)
     return 0
+
+
+def handle_bulk_add_comment(args: argparse.Namespace) -> int:
+    if args.task_ids:
+        task_ids: list[str] = list(args.task_ids)
+    else:
+        query: dict[str, Any] = {"status": args.status}
+        tasks = request_json(args, "GET", "/tasks", query=query)
+        task_ids = [t["id"] for t in tasks]
+
+    if args.dry_run:
+        pretty_print({"dry_run": True, "tasks": task_ids})
+        return 0
+
+    updated: list[str] = []
+    comment_ids: dict[str, str] = {}
+    failed: list[str] = []
+
+    for task_id in task_ids:
+        success = False
+        for attempt in range(len(BULK_COMMENT_RETRY_DELAYS_SECONDS) + 1):
+            try:
+                response = _make_http_request(
+                    args,
+                    "POST",
+                    f"/tasks/{parse.quote(task_id)}/comments",
+                    payload={"text": args.text},
+                )
+                updated.append(task_id)
+                comment_ids[task_id] = response["comment_id"]
+                success = True
+                break
+            except error.HTTPError as exc:
+                if exc.code == 429 and attempt < len(BULK_COMMENT_RETRY_DELAYS_SECONDS):
+                    delay = BULK_COMMENT_RETRY_DELAYS_SECONDS[attempt]
+                    print(
+                        f"  [rate limited] retrying {task_id} in {delay}s"
+                        f" (attempt {attempt + 1}/{len(BULK_COMMENT_RETRY_DELAYS_SECONDS)})...",
+                        file=sys.stderr,
+                    )
+                    time.sleep(delay)
+                else:
+                    msg = exc.read().decode("utf-8", errors="replace")
+                    try:
+                        parsed = json.loads(msg) if msg else {"error": exc.reason}
+                        formatted = json.dumps(parsed, indent=2, sort_keys=True)
+                    except json.JSONDecodeError:
+                        formatted = msg or str(exc.reason)
+                    print(f"  {task_id}: HTTP {exc.code}: {formatted}", file=sys.stderr)
+                    break
+        if not success:
+            failed.append(task_id)
+
+    result: dict[str, Any] = {
+        "ok": not failed,
+        "updated": updated,
+        "comment_ids": comment_ids,
+    }
+    if failed:
+        result["failed"] = failed
+    pretty_print(result)
+    return 0 if not failed else 1
 
 
 def main(argv: list[str] | None = None) -> int:
