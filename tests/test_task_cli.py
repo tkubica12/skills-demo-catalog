@@ -154,7 +154,69 @@ def test_request_json_does_not_retry_http_429(monkeypatch: pytest.MonkeyPatch, c
     assert "HTTP 429" in capsys.readouterr().err
 
 
-def test_bulk_add_comment_not_available() -> None:
-    result = run_cli("bulk-add-comment")
+def test_bulk_add_comment_by_status() -> None:
+    result = run_cli("bulk-add-comment", "--status", "waiting-for-response", "bulk test comment")
+    assert result.returncode == 0, result.stderr
+    assert "Found" in result.stdout
+    assert "Done." in result.stdout
+
+
+def test_bulk_add_comment_by_task_ids() -> None:
+    result = run_cli("bulk-add-comment", "--task-ids", "task-1", "task-2", "--", "hello from bulk")
+    assert result.returncode == 0, result.stderr
+    assert "Found 2 task(s)" in result.stdout
+    assert "Done." in result.stdout
+
+
+def test_bulk_add_comment_dry_run() -> None:
+    result = run_cli("bulk-add-comment", "--status", "waiting-for-response", "--dry-run", "dry run text")
+    assert result.returncode == 0, result.stderr
+    assert "Dry-run mode" in result.stdout
+
+
+def test_bulk_add_comment_missing_args() -> None:
+    result = run_cli("bulk-add-comment", "some text")
     assert result.returncode != 0
-    assert "invalid choice" in result.stderr
+
+
+def test_bulk_add_comment_rate_limit_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts: dict[str, int] = {}
+
+    class FakeResponse:
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
+            return False
+
+        def read(self) -> bytes:
+            return b'{"ok": true, "comment_id": "c-fake"}'
+
+    def fake_urlopen(req: object, *args: object, **kwargs: object) -> object:
+        url = getattr(req, "full_url", "")
+        if "task-1/comments" in url:
+            attempts["task-1"] = attempts.get("task-1", 0) + 1
+            if attempts["task-1"] < 3:
+                raise task_cli.error.HTTPError(
+                    url=url,
+                    code=429,
+                    msg="Too Many Requests",
+                    hdrs=None,
+                    fp=io.BytesIO(b'{"detail": "rate limited"}'),
+                )
+        return FakeResponse()
+
+    monkeypatch.setattr(task_cli.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(task_cli.time, "sleep", lambda s: None)
+
+    args = argparse.Namespace(
+        api_url=os.environ.get("TASK_API_URL", "http://127.0.0.1:18080"),
+        token=None,
+        task_ids=["task-1"],
+        status=None,
+        dry_run=False,
+        text="retry test",
+    )
+    exit_code = task_cli.handle_bulk_add_comment(args)
+    assert exit_code == 0
+    assert attempts.get("task-1", 0) == 3

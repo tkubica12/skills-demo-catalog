@@ -140,6 +140,18 @@ Response:
 }
 ```
 
+## CLI commands
+
+### bulk-add-comment
+
+Posts the same comment to multiple tasks. Uses `--status` to query tasks or `--task-ids` for an explicit list. Supports `--dry-run` to preview without posting. Automatically retries each individual POST on HTTP 429 with exponential backoff (delays: 2, 4, 8, 16, 32 s; up to 5 retries per task).
+
+```bash
+python task_cli.py bulk-add-comment --status waiting-for-response "Following up."
+python task_cli.py bulk-add-comment --task-ids task-1 task-2 task-3 "Following up."
+python task_cli.py bulk-add-comment --status waiting-for-response --dry-run "Following up."
+```
+
 ## Notes
 
 The shared skill contract is defined by the documented endpoints above. The
