@@ -79,10 +79,15 @@ jobs:
             fi
           fi
 
-          if [ -z "$spec" ] && [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ -z "$spec" ]; then
             mapfile -t specs < <(find benchmarks/specs -type f -name '*.json' | sort)
             if [ "${#specs[@]}" -eq 1 ]; then
               spec="${specs[0]}"
+              echo "::notice::No PR-specific benchmark spec was changed; using the only catalog spec: $spec"
+            elif [ "${#specs[@]}" -gt 1 ]; then
+              echo "::error::No benchmark spec was selected and multiple specs exist. Add or update exactly one spec under benchmarks/specs/ in the PR, or pass workflow_dispatch input 'spec'."
+              printf '%s\n' "${specs[@]}"
+              exit 1
             fi
           fi
 
