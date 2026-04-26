@@ -141,6 +141,7 @@ jobs:
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
+          github-token: ${{ secrets.COPILOT_TOKEN || github.token }}
           script: |
             const fs = require("fs");
             const marker = "<!-- agent-benchmark-summary -->";
