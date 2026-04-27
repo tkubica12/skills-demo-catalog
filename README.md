@@ -45,6 +45,7 @@ https://task-api-demo.politepond-5bd69c31.swedencentral.azurecontainerapps.io
 ## Showcase script
 
 ### 1. Create a plain fresh repo
+We will create new folder and initialize repository.
 
 ```sh
 mkdir fresh-skill-demo
@@ -53,12 +54,14 @@ git init
 ```
 
 ### 2. Install the shared skill from the central catalog
+GitHub CLI comes with skill subcommand so we can easily download version-controled skilled.
 
 ```sh
 gh skill install tkubica12/skills-demo-catalog task-api-helper --scope project --agent github-copilot
 ```
 
 ### 3. In the installed skill folder, create `.env`
+Once downloaded make sure to configure `.env` with URL to your instance of demo API.
 
 Copy `.agents/skills/task-api-helper/.env.example` to
 `.agents/skills/task-api-helper/.env`, then set it to:
@@ -68,6 +71,7 @@ TASK_API_URL=https://task-api-demo.politepond-5bd69c31.swedencentral.azurecontai
 ```
 
 ### 4. Open Copilot and try following prompts
+Open Copilot in our new project, eg. using Visual Studio Code Agents UI a GitHub Copilot CLI, and try following tasks. Copilot should use our skill accordingly and react to whatever issues it is faced with.
 
 ```text
 List tasks waiting for response and summarize what needs attention.
@@ -81,117 +85,110 @@ Open task-1 and add this comment: "Following up - please provide an update."
 Add the same comment to every task waiting for response. 
 ```
 
+Note we have seen problems - rate limits on our API and need to go call by call with no bulk operation capability. This all does increase token usage and time, lowers reliability.
+
 ```text
 Based on your experience with this workflow, suggest one improvement that could make it faster or more reliable next time.
 ```
 
-This is the key demo moment: the agent should feel the workflow gap.
+At this point agent will probably suggest two improvements:
 
-#### Prompt 4
+- API is returning 429 (rate limit) sometimes and CLI has no retry so agent has to retry itself (takes time and costs tokens)
+- CLI does not implement bulk operation so agent has to do this in multiple turns (again takes time and costs tokens)
 
-```text
-Try a temporary local proof of concept in this repo only. Do not commit it. Tell me what you changed, whether it helped, and what the right shared improvement would be.
-```
+Agent should create local PoC to prove this idea and based on that create Issue in central repository with his suggestions and details how to achieve it.
 
-#### Prompt 5
 
-```text
-Remove the local proof of concept, then draft an upstream enhancement issue for tkubica12/skills-demo-catalog with the exact findings and proposed shared command.
-```
+### 5. Central maintainer steps
 
-#### Prompt 6
+Once the issue exists, we run GitHub Agentic Workflows to spin up agent to triage this request. Agent will post its recommendation to issue notes and assign label `copilot-recommended` if agent finds this enhancement useful and feasible. Now it waits for human in the loop.
 
-```text
-Create the GitHub issue in tkubica12/skills-demo-catalog, then tell me the issue number, the local evidence you included, and why this belongs in the central catalog instead of this repo.
-```
+Assign label "accepted" to it. This will start agentic process to implement this (we have workflow that auto-assigns accepted issues to **Copilot** to implement this).
 
-## Central maintainer steps
+### 6. Review the Copilot pull request
 
-Once the issue exists, switch back to this catalog repo.
-
-### 5. Find the new issue
-
-```sh
-gh issue list -R tkubica12/skills-demo-catalog --limit 10
-```
-
-### 6. Accept it for central implementation
-
-Replace `<ISSUE_NUMBER>`:
-
-```sh
-gh issue edit <ISSUE_NUMBER> -R tkubica12/skills-demo-catalog --add-label accepted
-```
-
-### 7. Watch Copilot get assigned
-
-```sh
-gh run list -R tkubica12/skills-demo-catalog --workflow "Auto-assign to Copilot" --limit 5
-gh issue view <ISSUE_NUMBER> -R tkubica12/skills-demo-catalog
-```
-
-### 8. Watch the PR appear
+After the `accepted` label is added, GitHub Actions assigns the issue to **Copilot**. Copilot creates a pull request in this central catalog with the proposed skill enhancement.
 
 ```sh
 gh pr list -R tkubica12/skills-demo-catalog --limit 10
+gh pr view <PR_NUMBER> -R tkubica12/skills-demo-catalog --web
 ```
 
-If you want one more Copilot prompt at this point, use:
+In this demo, the PR should show the catalog-controlled change, not a local one-off workaround in the consumer repo:
+
+1. new or updated skill command implementation
+2. updated skill instructions or references, if needed
+3. tests for the changed command behavior
+4. a benchmark spec used by CI to describe why this enhancement should help
+
+The important point is that Copilot is not just writing code. It is also contributing the evidence needed to prove that the central skill got better.
+
+### 7. Show the agentic benchmark check
+
+The PR runs the `CI Benchmark` workflow. This workflow starts an agentic test using the **GitHub Copilot SDK**.
+
+```sh
+gh pr checks <PR_NUMBER> -R tkubica12/skills-demo-catalog
+gh run list -R tkubica12/skills-demo-catalog --workflow "CI Benchmark" --limit 5
+```
+
+The benchmark compares two variants:
+
+1. **baseline** - the current skill from `main`
+2. **candidate** - the skill from the pull request
+
+For each variant, the workflow spins up the same local demo Task API scenario and asks Copilot to complete the same goal-level task. The benchmark does not hardcode the exact tool calls Copilot must make. Instead, it measures how the agent behaves with the old skill versus the enhanced skill.
+
+The benchmark captures:
+
+1. whether the task succeeded
+2. how many tasks were updated
+3. wall-clock duration
+4. input and output token usage
+5. number of LLM calls
+6. Task API requests
+7. API rate-limit responses
+
+This lets us demonstrate the business value of the skill change: the enhanced central skill should complete the same work with fewer agent turns, fewer tokens, and less time.
+
+### 8. Show the benchmark PR comment
+
+When the benchmark finishes, the workflow posts a sticky comment on the pull request with a summary table.
+
+```sh
+gh pr view <PR_NUMBER> -R tkubica12/skills-demo-catalog --comments
+```
+
+For this enhancement, the comment should show something like:
+
+| Variant | Success | Updated | Duration (s) | Input tokens | Output tokens | LLM calls | API requests | 429s |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| baseline | true | 2 | higher | higher | higher | higher | similar | similar |
+| candidate | true | 2 | lower | lower | lower | lower | similar | similar |
+
+Use this comment as the proof point: the pull request is not approved only because the code looks reasonable, but because an automated agentic benchmark shows the enhanced skill saves time and tokens on the workflow it was designed to improve.
+
+### 9. Merge and consume the improved central skill
+
+After reviewing the implementation, tests, and benchmark result, merge the PR into the central catalog.
+
+Then return to the consumer repo and update or reinstall the skill:
+
+```sh
+gh skill install tkubica12/skills-demo-catalog task-api-helper --scope project --agent github-copilot
+```
+
+Now repeat the original bulk-comment prompt:
 
 ```text
-Implement the accepted enhancement in the central catalog, update the skill docs and tests, and open a PR.
+Add the same comment to every task waiting for response.
 ```
 
-## Full-loop variant
+The agent should now have a better centrally maintained skill available. The local project did not need to keep custom scripts or a forked workaround.
 
-If you want to continue past issue + PR:
+### 10. Demo reset
 
-### 9. Merge the PR
+For a clean repeatable demo, leave the catalog in the pre-enhancement state until you are ready to show the merge moment. Keep the accepted issue and Copilot PR available when demonstrating the governance flow, then merge only when you want to demonstrate central rollout.
 
-Replace `<PR_NUMBER>`:
+---
 
-```sh
-gh pr merge <PR_NUMBER> -R tkubica12/skills-demo-catalog --merge
-```
-
-### 10. Publish the updated skill
-
-Replace `<NEW_TAG>`:
-
-```sh
-gh skill publish --tag <NEW_TAG>
-```
-
-### 11. Go back to the fresh repo and update the installed skill
-
-```sh
-cd fresh-skill-demo
-gh skill install tkubica12/skills-demo-catalog task-api-helper --scope project --agent github-copilot --force --pin <NEW_TAG>
-```
-
-### 12. Final prompt in the fresh repo
-
-```text
-Run the same task workflow again and tell me whether the new shared skill release closed the gap.
-```
-
-## Minimal talking points
-
-- "This repo is the central source of truth for shared agent capabilities."
-- "The consumer repo starts empty and installs the skill with `gh skill`."
-- "The gap is discovered downstream, but fixed centrally."
-- "The output is not a local hack. The output is a released shared skill."
-
-## Publishing
-
-Validate:
-
-```sh
-gh skill publish --dry-run
-```
-
-Publish:
-
-```sh
-gh skill publish --tag vX.Y.Z
-```
