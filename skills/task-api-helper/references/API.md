@@ -155,6 +155,6 @@ enhancement is accepted and released through the catalog.
 | `401` | Unauthorized | Missing or invalid bearer token |
 | `404` | Not found | Unknown task ID or path |
 | `409` | Conflict | Task state prevents the requested write |
-| `429` | Too many requests | Client exceeded service rate limits |
+| `429` | Too many requests | Client exceeded service rate limits; the `bulk-add-comment` CLI command retries automatically with exponential backoff |
 | `500` | Internal server error | Unexpected service-side failure |
 | `503` | Service unavailable | Dependency outage or maintenance window |
