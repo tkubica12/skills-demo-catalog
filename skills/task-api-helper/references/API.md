@@ -140,6 +140,37 @@ Response:
 }
 ```
 
+## CLI commands
+
+### bulk-add-comment
+
+The CLI provides a `bulk-add-comment` command that composes the list and per-task
+comment endpoints into a single workflow step with built-in `429` retry:
+
+```bash
+python task_cli.py bulk-add-comment \
+  --status waiting-for-response \
+  --text "Following up — please provide an update." \
+  [--skip-existing]
+```
+
+Behaviour:
+
+1. Calls `GET /tasks?status=<status>` once to fetch the target task list.
+2. If `--skip-existing` is set, calls `GET /tasks/{id}` per task and skips any
+   task whose comment thread already contains an identical text.
+3. Posts `POST /tasks/{id}/comments` for each remaining task, retrying
+   automatically on `429 Too Many Requests` with exponential back-off.
+4. Prints a single JSON summary:
+
+```json
+{
+  "commented": ["task-1", "task-2"],
+  "skipped":   [],
+  "failed":    []
+}
+```
+
 ## Notes
 
 The shared skill contract is defined by the documented endpoints above. The

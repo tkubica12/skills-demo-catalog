@@ -17,6 +17,7 @@ from urllib import error, parse, request
 
 DEFAULT_TIMEOUT_SECONDS = 30
 TRANSIENT_RETRY_DELAYS_SECONDS = (0.25, 0.5, 1.0)
+BULK_RATE_LIMIT_DELAYS_SECONDS = (1.0, 2.0, 4.0)
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SKILL_DOTENV_PATH = SKILL_ROOT / ".env"
 
@@ -62,6 +63,29 @@ def build_parser() -> argparse.ArgumentParser:
     comment_parser.add_argument("task_id", help="Task identifier to update.")
     comment_parser.add_argument("text", help="Comment text to append to the task.")
     comment_parser.set_defaults(handler=handle_add_comment)
+
+    bulk_comment_parser = subparsers.add_parser(
+        "bulk-add-comment",
+        parents=[shared],
+        help="Add the same comment to all tasks matching a status filter.",
+    )
+    bulk_comment_parser.add_argument(
+        "--status",
+        default=None,
+        help="Filter tasks by status, for example waiting-for-response.",
+    )
+    bulk_comment_parser.add_argument(
+        "--text",
+        required=True,
+        help="Comment text to append to each matching task.",
+    )
+    bulk_comment_parser.add_argument(
+        "--skip-existing",
+        action="store_true",
+        default=False,
+        help="Skip tasks that already contain an identical comment.",
+    )
+    bulk_comment_parser.set_defaults(handler=handle_bulk_add_comment)
 
     return parser
 
@@ -230,6 +254,63 @@ def handle_add_comment(args: argparse.Namespace) -> int:
         payload={"text": args.text},
     )
     pretty_print(response)
+    return 0
+
+
+def handle_bulk_add_comment(args: argparse.Namespace) -> int:
+    query: dict[str, Any] = {}
+    if args.status is not None:
+        query["status"] = args.status
+    tasks = request_json(args, "GET", "/tasks", query=query or None)
+
+    commented: list[str] = []
+    skipped: list[str] = []
+    failed: list[str] = []
+
+    base_url = resolve_base_url(args)
+    token = resolve_token(args)
+    headers: dict[str, str] = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    for task in tasks:
+        task_id: str = task["id"]
+
+        if args.skip_existing:
+            task_detail = request_json(args, "GET", f"/tasks/{parse.quote(task_id)}")
+            existing = {c["text"] for c in task_detail.get("comments", [])}
+            if args.text in existing:
+                skipped.append(task_id)
+                continue
+
+        url = f"{base_url}/tasks/{parse.quote(task_id)}/comments"
+        data = json.dumps({"text": args.text}).encode("utf-8")
+        http_req = request.Request(url, data=data, headers=headers, method="POST")
+
+        comment_added = False
+        for attempt_index in range(len(BULK_RATE_LIMIT_DELAYS_SECONDS) + 1):
+            try:
+                with request.urlopen(http_req, timeout=DEFAULT_TIMEOUT_SECONDS) as resp:
+                    result = decode_response(resp)
+                    if result and result.get("ok"):
+                        commented.append(task_id)
+                        comment_added = True
+                break
+            except error.HTTPError as exc:
+                if exc.code == 429 and attempt_index < len(BULK_RATE_LIMIT_DELAYS_SECONDS):
+                    time.sleep(BULK_RATE_LIMIT_DELAYS_SECONDS[attempt_index])
+                    continue
+                break
+            except error.URLError:
+                break
+
+        if not comment_added:
+            failed.append(task_id)
+
+    pretty_print({"commented": commented, "skipped": skipped, "failed": failed})
     return 0
 
 

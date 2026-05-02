@@ -154,7 +154,83 @@ def test_request_json_does_not_retry_http_429(monkeypatch: pytest.MonkeyPatch, c
     assert "HTTP 429" in capsys.readouterr().err
 
 
-def test_bulk_add_comment_not_available() -> None:
-    result = run_cli("bulk-add-comment")
-    assert result.returncode != 0
-    assert "invalid choice" in result.stderr
+def test_bulk_add_comment_adds_to_all_matching_tasks() -> None:
+    result = run_cli(
+        "bulk-add-comment",
+        "--status", "waiting-for-response",
+        "--text", "Bulk follow-up test comment",
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert isinstance(payload["commented"], list)
+    assert len(payload["commented"]) >= 1
+    assert all(t.startswith("task-") for t in payload["commented"])
+    assert payload["failed"] == []
+
+
+def test_bulk_add_comment_skip_existing() -> None:
+    text = "Unique skip-existing test comment"
+    # First call: add the comment to all waiting-for-response tasks
+    first = run_cli(
+        "bulk-add-comment",
+        "--status", "waiting-for-response",
+        "--text", text,
+    )
+    assert first.returncode == 0, first.stderr
+    first_payload = json.loads(first.stdout)
+    assert len(first_payload["commented"]) >= 1
+
+    # Second call with --skip-existing: all previously commented tasks should be skipped
+    second = run_cli(
+        "bulk-add-comment",
+        "--status", "waiting-for-response",
+        "--text", text,
+        "--skip-existing",
+    )
+    assert second.returncode == 0, second.stderr
+    second_payload = json.loads(second.stdout)
+    assert second_payload["commented"] == []
+    assert second_payload["failed"] == []
+    assert set(second_payload["skipped"]) == set(first_payload["commented"])
+
+
+def test_bulk_add_comment_retries_429(monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts: dict[str, int] = {"count": 0}
+
+    class FakeResponse:
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
+            return False
+
+        def read(self) -> bytes:
+            return b'{"ok": true, "comment_id": "c-abc123"}'
+
+    original_urlopen = task_cli.request.urlopen
+
+    def fake_urlopen(req: object, *args: object, **kwargs: object) -> object:
+        attempts["count"] += 1
+        if attempts["count"] == 1 and "/comments" in getattr(req, "full_url", ""):
+            raise task_cli.error.HTTPError(
+                url=getattr(req, "full_url", ""),
+                code=429,
+                msg="Too Many Requests",
+                hdrs=None,
+                fp=__import__("io").BytesIO(b'{"detail": "rate limit"}'),
+            )
+        # Fall through to real mock server for non-429 calls
+        return original_urlopen(req, *args, **kwargs)
+
+    monkeypatch.setattr(task_cli.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(task_cli.time, "sleep", lambda seconds: None)
+
+    result = run_cli(
+        "bulk-add-comment",
+        "--status", "waiting-for-response",
+        "--text", "Retry test comment",
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    # At least one task should have been commented (after retry)
+    assert len(payload["commented"]) >= 1

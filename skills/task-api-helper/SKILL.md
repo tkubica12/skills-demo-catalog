@@ -69,6 +69,30 @@ python task_cli.py add-comment TASK_ID "Your comment text" [--api-url <url>]
 
 Appends a comment to a single task. The comment text is a positional argument.
 
+### bulk-add-comment
+
+```bash
+python task_cli.py bulk-add-comment --text "Your comment text" [--status <status>] [--skip-existing] [--api-url <url>]
+```
+
+Appends the same comment to every task that matches the optional `--status` filter. Omit `--status` to target all tasks. Use `--skip-existing` to silently skip any task that already contains an identical comment.
+
+The command handles `429 Too Many Requests` responses automatically by retrying with exponential backoff. It returns one JSON summary with three keys:
+
+```json
+{
+  "commented": ["task-1", "task-2"],
+  "skipped":   [],
+  "failed":    []
+}
+```
+
+| Key | Meaning |
+|-----|---------|
+| `commented` | Task IDs that received the comment successfully |
+| `skipped` | Task IDs skipped because an identical comment already existed (`--skip-existing`) |
+| `failed` | Task IDs for which the comment could not be added after all retries |
+
 ---
 
 ## Workflow evolution
