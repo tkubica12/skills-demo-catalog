@@ -36,12 +36,6 @@ az containerapp up \
   --image ghcr.io/tkubica12/skills-demo-catalog/task-api:main
 ```
 
-Current live demo URL:
-
-```text
-https://task-api-demo.politepond-5bd69c31.swedencentral.azurecontainerapps.io
-```
-
 ## Showcase script
 
 ### 1. Create a plain fresh repo
@@ -67,7 +61,7 @@ Copy `.agents/skills/task-api-helper/.env.example` to
 `.agents/skills/task-api-helper/.env`, then set it to:
 
 ```dotenv
-TASK_API_URL=https://task-api-demo.politepond-5bd69c31.swedencentral.azurecontainerapps.io
+TASK_API_URL=https://task-api-demo.politepond-001122334455.swedencentral.azurecontainerapps.io
 ```
 
 ### 4. Open Copilot and try following prompts
